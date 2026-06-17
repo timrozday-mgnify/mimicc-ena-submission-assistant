@@ -59,10 +59,10 @@ DataHarmonizer bundle itself, in a dedicated build stage.
 bash scripts/vendor.sh
 
 # 2. Put FASTQ/BAM/CRAM files in the reads workspace (default ~/.mimicc-ena/reads),
-#    or set MIMICC_READS_DIR. Also pre-create the DH bundle/schema dirs (bind
-#    mounts must exist before `docker compose up` — see MIMICC_DH_BUNDLE_DIR /
-#    MIMICC_DH_SCHEMA_DIR in .env.example).
-mkdir -p ~/.mimicc-ena/reads ~/.mimicc-ena/dh-bundle ~/.mimicc-ena/dh-schema
+#    or set MIMICC_READS_DIR. Also pre-create the DH bundle/schema/draft dirs
+#    (bind mounts must exist before `docker compose up` — see MIMICC_DH_BUNDLE_DIR /
+#    MIMICC_DH_SCHEMA_DIR / MIMICC_DH_DRAFT_DIR in .env.example).
+mkdir -p ~/.mimicc-ena/reads ~/.mimicc-ena/dh-bundle ~/.mimicc-ena/dh-schema ~/.mimicc-ena/dh-draft
 
 # 3. Start (this also builds the embedded DataHarmonizer bundle — see
 #    "DataHarmonizer bundle build" below)
@@ -113,12 +113,32 @@ dataharmonizer-src=../DataHarmonizer -t mimicc-dh-builder .`), mirroring how
 reads submission spawns `enasequence/webin-cli`. There's no UI for this yet —
 it's scaffolding for a future in-app template editor.
 
+#### Export integration (requires a patched DataHarmonizer fork)
+
+The Samples tab's **Export to Prepare** button and its 30s autosave pull the current grid data
+straight out of the embedded DataHarmonizer iframe (same-origin, via
+`iframe.contentWindow.dataHarmonizer.getExportJson()`) and write it to
+`POST /api/sample/dh-export`, which persists it to `/dh-draft/export.json` (bind-mounted from
+`MIMICC_DH_DRAFT_DIR`, default `~/.mimicc-ena/dh-draft`) and populates the `#dhExport` textarea
+that the **Prepare** step already reads — no manual File → Save As → upload round trip. A
+`GET /api/sample/dh-export` on page load restores the last save (textarea + "Last saved" indicator)
+so a reload doesn't lose it.
+
+**This requires `window.dataHarmonizer` to exist in the DataHarmonizer bundle** — vanilla
+DataHarmonizer doesn't expose this; it's a small patch (`lib/Toolbar.js`: extract
+`buildExportJson`/`getExportJson` from `saveFile()`; `web/index.js`: expose
+`window.dataHarmonizer = {ready, getExportJson}` once the grid loads) applied directly to the
+`DataHarmonizer` checkout used as the `dataharmonizer-src` build context. Without it, the button
+shows "DataHarmonizer isn't ready yet" and the Samples tab falls back to the manual upload/paste
+flow described above.
+
 ## Using it
 
 1. **Credentials** — enter your Webin username/password (memory only).
 2. **Studies** — create a study → note the `PRJEB…` accession.
-3. **Samples** — enter metadata in DataHarmonizer, export JSON, **Prepare**
-   (filter + rename), then **Submit** with checklist `ERC000025` → `ERS…`/`SAMEA…`.
+3. **Samples** — enter metadata in DataHarmonizer, click **Export to Prepare** (autosaves every
+   30s too — see "Export integration" above), **Prepare** (filter + rename), then **Submit** with
+   checklist `ERC000025` → `ERS…`/`SAMEA…`.
 4. **Reads** — **Scan** the active reads directory (default workspace, or
    **Browse…** to point at any folder on disk), **Auto-assign samples**, pick
    a library preset, set the study accession, then **Submit reads to ENA**

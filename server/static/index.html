@@ -175,7 +175,11 @@
     <div class="panel maximizable" id="dhPanel">
       <div class="panel-head">
         <h2>1 · Enter sample metadata (DataHarmonizer)</h2>
-        <button class="icon-btn" type="button" onclick="togglePanelMax('dhPanel')" title="Maximize panel" aria-label="Maximize panel">⛶</button>
+        <div class="inline">
+          <button class="btn secondary" type="button" id="dhExportBtn" onclick="exportDhNow()">Export to Prepare</button>
+          <span class="muted" id="dhSavedIndicator">Last saved: never</span>
+          <button class="icon-btn maximize-toggle-btn" type="button" onclick="togglePanelMax('dhPanel')" title="Maximize panel" aria-label="Maximize panel">⛶</button>
+        </div>
       </div>
       <div class="panel-body">
         <div id="dhWrap"><iframe id="dhFrame" src="/dh/"></iframe></div>
@@ -242,7 +246,7 @@
     <div class="panel maximizable" id="readsAssignPanel">
       <div class="panel-head">
         <h2>2 · Assign samples & library metadata</h2>
-        <button class="icon-btn" type="button" onclick="togglePanelMax('readsAssignPanel')" title="Maximize panel" aria-label="Maximize panel">⛶</button>
+        <button class="icon-btn maximize-toggle-btn" type="button" onclick="togglePanelMax('readsAssignPanel')" title="Maximize panel" aria-label="Maximize panel">⛶</button>
       </div>
       <div class="panel-body">
         <div class="row">

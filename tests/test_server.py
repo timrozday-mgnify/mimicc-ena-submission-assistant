@@ -145,6 +145,31 @@ async def test_sample_prepare(client, monkeypatch):
     assert body["records"] == [{"alias": "s1"}]
 
 
+async def test_dh_export_round_trip(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(_main, "_DH_DRAFT_CONTAINER_DIR", tmp_path)
+    monkeypatch.setattr(_main, "_DH_DRAFT_FILE", tmp_path / "export.json")
+
+    export = {"Container": {"MIMICC_SampleExperiments": [{"alias": "s1"}]}}
+    r = await client.post("/api/sample/dh-export", json={"export": export})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ok"
+    assert body["saved_at"]
+
+    r = await client.get("/api/sample/dh-export")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["export"] == export
+    assert body["saved_at"]
+
+
+async def test_dh_export_none_saved_yet(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(_main, "_DH_DRAFT_FILE", tmp_path / "export.json")
+    r = await client.get("/api/sample/dh-export")
+    assert r.status_code == 200
+    assert r.json() == {"export": None, "saved_at": None}
+
+
 async def test_study_submit(client, with_creds, monkeypatch):
     monkeypatch.setattr(
         _main.ena_service, "submit_studies", lambda *a, **k: {"success": True, "accessions": [{"accession": "ERP9"}]}
