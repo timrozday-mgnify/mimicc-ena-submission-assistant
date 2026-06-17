@@ -7,10 +7,22 @@ Playwright (and its browsers) are not installed.
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 playwright_sync = pytest.importorskip("playwright.sync_api")
 from playwright.sync_api import sync_playwright  # noqa: E402
+
+
+def _open_session(pg):
+    """Create + open a session so the tabs unlock (the app gates on a session)."""
+    pg.wait_for_selector("#sessionModal.show")
+    name = f"ui-test-{int(time.time() * 1000)}"
+    pg.fill("#newSessionName", name)
+    pg.click("#sessionModal button:has-text('Create & open')")
+    pg.wait_for_selector("#sessionModal:not(.show)", state="attached")
+    pg.wait_for_function("() => !document.body.classList.contains('no-session')")
 
 
 @pytest.fixture
@@ -23,6 +35,7 @@ def page(live_server_url):
             return
         pg = browser.new_page()
         pg.goto(live_server_url)
+        _open_session(pg)
         yield pg
         browser.close()
 

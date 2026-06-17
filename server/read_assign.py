@@ -194,19 +194,23 @@ def validate_record(record: dict[str, Any]) -> list[str]:
     return problems
 
 
-def build_manifest(record: dict[str, Any], workdir: Path) -> tuple[str, Path]:
+def build_manifest(record: dict[str, Any], workdir: Path, *, alias: str | None = None) -> tuple[str, Path]:
     """Write a tab-delimited webin-cli "reads" manifest for one run into ``workdir``.
 
-    A timestamp is appended to ``NAME`` so re-submitting the same run yields a
-    distinct alias (avoids ENA duplicate-alias rejections). Returns
+    If ``alias`` is given it is used verbatim as the run's NAME/alias (the
+    session-aware caller passes a stable, account-unique alias so the run can
+    be detected in ENA on a later resume). If ``alias`` is None, a timestamp is
+    appended to ``NAME`` so re-submitting the same run yields a distinct alias
+    (the original behaviour; avoids ENA duplicate-alias rejections). Returns
     (alias, manifest_path). Raises ValueError if the record is invalid.
     """
     problems = validate_record(record)
     if problems:
         raise ValueError(f"Run {record.get('NAME', '<unknown>')!r}: " + "; ".join(problems))
 
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    alias = f"{record['NAME']}_{timestamp}"
+    if alias is None:
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        alias = f"{record['NAME']}_{timestamp}"
 
     fields: list[tuple[str, str]] = [
         ("STUDY", record["STUDY"]),

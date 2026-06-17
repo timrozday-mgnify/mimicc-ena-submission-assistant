@@ -8,6 +8,8 @@ let HEALTH = {};
 let RUN_ROWS = [];          // editable run records for the Reads tab
 let READ_SAMPLES = [];      // ENA samples available for read assignment
 let SELECTED_SAMPLE = "";   // selected sample accession for click assignment
+let SESSION = null;         // active submission session {id, name, test_env}
+let READS_RUNS = {};        // run_name -> reads ledger row (resume status) for the active session
 
 const $ = (id) => document.getElementById(id);
 
@@ -119,6 +121,154 @@ prefersLight.addEventListener("change", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Submission sessions (named, persisted; restore-all on open)
+// ---------------------------------------------------------------------------
+let saveTimer = null;
+let suppressSave = false;  // true while applying restored state (don't echo back)
+
+function openSessionModal() { loadSessionList(); $("sessionModal").classList.add("show"); }
+function closeSessionModal() { $("sessionModal").classList.remove("show"); }
+
+function setSessionChip() {
+  $("sessionName").textContent = SESSION ? SESSION.name : "no session";
+  document.body.classList.toggle("no-session", !SESSION);
+}
+
+function setSessionSaved(isoTs) {
+  $("sessionSaved").textContent = isoTs ? "· saved " + new Date(isoTs).toLocaleTimeString() : "";
+}
+
+async function loadSessionList() {
+  const el = $("sessionList");
+  try {
+    const sessions = await api("/api/sessions");
+    if (!sessions.length) { el.innerHTML = '<p class="muted" style="padding:10px">No sessions yet — create one below.</p>'; return; }
+    el.innerHTML = "";
+    sessions.forEach((s) => {
+      const row = document.createElement("div");
+      row.className = "session-row";
+      const left = document.createElement("div");
+      left.innerHTML = `<b>${s.name}</b><div class="meta">${s.test_env ? "TEST" : "PRODUCTION"} · updated ${new Date(s.updated_at).toLocaleString()}</div>`;
+      const actions = document.createElement("div");
+      actions.className = "inline";
+      const open = document.createElement("button");
+      open.className = "btn"; open.style.padding = "4px 12px"; open.textContent = "Open";
+      open.onclick = () => openSession(s.id);
+      const del = document.createElement("button");
+      del.className = "icon-btn danger"; del.textContent = "×"; del.title = "Delete session";
+      del.onclick = async () => { if (confirm(`Delete session "${s.name}"? This removes its saved data.`)) { await api(`/api/sessions/${s.id}`, { method: "DELETE" }); loadSessionList(); } };
+      actions.append(open, del);
+      row.append(left, actions);
+      el.appendChild(row);
+    });
+  } catch (e) { el.innerHTML = `<p class="muted" style="padding:10px">${e.message}</p>`; }
+}
+
+async function createSession() {
+  const name = $("newSessionName").value.trim();
+  if (!name) { banner("sessionBanner", false, "Enter a session name."); return; }
+  try {
+    const s = await api("/api/sessions", { method: "POST", body: JSON.stringify({ name, test_env: TEST }) });
+    $("newSessionName").value = "";
+    await openSession(s.id);
+  } catch (e) { banner("sessionBanner", false, e.message); }
+}
+
+async function openSession(id) {
+  try {
+    const data = await api(`/api/sessions/${id}`);
+    SESSION = data.session;
+    READS_RUNS = {};
+    (data.reads_runs || []).forEach((r) => { READS_RUNS[r.run_name] = r; });
+    setSessionChip();
+    closeSessionModal();
+    await applyState(data);
+    setSessionSaved(data.session.updated_at);
+  } catch (e) { banner("sessionBanner", false, e.message); }
+}
+
+// Snapshot all user-entered + result/log state (never credentials). Result
+// tables and logs are captured as rendered HTML/text so they restore exactly;
+// interactive state (run rows, samples, prepared records) is captured as data.
+const _FIELD_IDS = [
+  "studyJson", "studyHold", "sampleFilter", "sampleChecklist", "sampleHold",
+  "defaultStudy", "presetSelect", "recEntity", "recStatus", "dhExport",
+];
+const _CHECK_IDS = ["studyModify", "studyPublic", "sampleModify", "samplePublic"];
+const _RESULT_IDS = ["studyOut", "prepOut", "sampleOut", "recOut", "readsResults"];
+const _LOG_IDS = ["readsLog", "recLog"];
+
+function collectState() {
+  const fields = {};
+  _FIELD_IDS.forEach((id) => { fields[id] = $(id).value; });
+  const checks = {};
+  _CHECK_IDS.forEach((id) => { checks[id] = $(id).checked; });
+  const resultsHtml = {};
+  _RESULT_IDS.forEach((id) => { resultsHtml[id] = $(id).innerHTML; });
+  const logs = {};
+  _LOG_IDS.forEach((id) => { logs[id] = $(id).textContent; });
+  return {
+    v: 1, test: TEST, fields, checks, resultsHtml, logs,
+    runRows: RUN_ROWS, readSamples: READ_SAMPLES, selectedSample: SELECTED_SAMPLE,
+    prepared: window.__prepared || null,
+  };
+}
+
+async function applyState(data) {
+  suppressSave = true;
+  try {
+    const st = data.state || {};
+    // Env
+    TEST = st.test !== undefined ? st.test : SESSION.test_env;
+    $("prodToggle").checked = !TEST;
+    $("envPill").textContent = TEST ? "TEST" : "PRODUCTION";
+    $("envPill").className = "pill " + (TEST ? "test" : "prod");
+    // Fields + checkboxes
+    Object.entries(st.fields || {}).forEach(([id, v]) => { if ($(id) != null) $(id).value = v; });
+    Object.entries(st.checks || {}).forEach(([id, v]) => { if ($(id) != null) $(id).checked = v; });
+    // Result tables + logs (rendered HTML / text)
+    Object.entries(st.resultsHtml || {}).forEach(([id, html]) => { if ($(id) != null) $(id).innerHTML = html; });
+    Object.entries(st.logs || {}).forEach(([id, txt]) => { if ($(id) != null) $(id).textContent = txt; });
+    // Interactive state
+    RUN_ROWS = st.runRows || [];
+    READ_SAMPLES = st.readSamples || [];
+    SELECTED_SAMPLE = st.selectedSample || "";
+    window.__prepared = st.prepared || undefined;
+    renderRunTable();
+    renderReadSampleList();
+    $("sampleSubmitBtn").disabled = !(window.__prepared && window.__prepared.length);
+    // DataHarmonizer grid: load saved export into the textarea + the grid.
+    if (data.dh_export) {
+      $("dhExport").value = JSON.stringify(data.dh_export);
+      setDhSavedIndicator(data.dh_saved_at);
+      loadDhGridWhenReady(data.dh_export);
+    } else {
+      setDhSavedIndicator(null);
+    }
+  } finally {
+    suppressSave = false;
+  }
+}
+
+function scheduleSave() {
+  if (suppressSave || !SESSION) return;
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveSessionNow, 1200);
+}
+
+async function saveSessionNow() {
+  if (!SESSION) return;
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  try {
+    const r = await api(`/api/sessions/${SESSION.id}/state`, {
+      method: "PUT",
+      body: JSON.stringify({ state: collectState(), test_env: TEST }),
+    });
+    setSessionSaved(r.saved_at);
+  } catch { /* transient; next change retries */ }
+}
+
+// ---------------------------------------------------------------------------
 // Tabs + env toggle
 // ---------------------------------------------------------------------------
 document.querySelectorAll("nav button").forEach((b) => {
@@ -138,6 +288,7 @@ $("prodToggle").onchange = (e) => {
   if (!TEST && !confirm("Switch to PRODUCTION ENA service? Submissions will be permanent.")) {
     e.target.checked = false; TEST = true; pill.textContent = "TEST"; pill.className = "pill test";
   }
+  scheduleSave();
 };
 
 // ---------------------------------------------------------------------------
@@ -161,14 +312,19 @@ async function refreshHealth() {
   const s = $("credStatus");
   s.textContent = "credentials: " + (HEALTH.credentials_configured ? "set" : "not set");
   s.className = "creds-status " + (HEALTH.credentials_configured ? "on" : "");
-  $("sampleFilter").value = HEALTH.default_sample_filter || "";
+  // Seed the default sample filter only when empty (don't clobber a restored
+  // session value).
+  if (!$("sampleFilter").value) $("sampleFilter").value = HEALTH.default_sample_filter || "";
   applyActiveReadsDir(HEALTH);
   if (!HEALTH.dh_available) { $("dhWrap").style.display = "none"; $("dhMissing").style.display = "block"; }
-  // populate library presets
+  // populate library presets (rebuild so repeated calls don't duplicate options)
   const sel = $("presetSelect");
+  const current = sel.value;
+  sel.innerHTML = '<option value="">— choose preset —</option>';
   Object.entries(HEALTH.library_presets || {}).forEach(([k, v]) => {
     const o = document.createElement("option"); o.value = k; o.textContent = v.label; sel.appendChild(o);
   });
+  sel.value = current;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,6 +339,7 @@ async function submitStudies() {
     }) });
     banner("studyBanner", r.success, r.success ? `Submitted ${r.accessions.length} study record(s).` : (r.error || "Submission failed."));
     renderTable("studyOut", r.accessions);
+    scheduleSave();
   } catch (e) { banner("studyBanner", false, e.message); }
 }
 
@@ -210,10 +367,12 @@ function setDhSavedIndicator(isoTs) {
 }
 
 async function saveDhExport(exportJson, { silent = false } = {}) {
+  if (!SESSION) { if (!silent) banner("prepBanner", false, "Open a session first."); return; }
   try {
-    const r = await api("/api/sample/dh-export", { method: "POST", body: JSON.stringify({ export: exportJson }) });
+    const r = await api(`/api/sessions/${SESSION.id}/dh-export`, { method: "POST", body: JSON.stringify({ export: exportJson }) });
     $("dhExport").value = JSON.stringify(exportJson);
     setDhSavedIndicator(r.saved_at);
+    scheduleSave();
     if (!silent) banner("prepBanner", true, "Exported from DataHarmonizer.");
   } catch (e) {
     if (!silent) banner("prepBanner", false, e.message);
@@ -228,28 +387,31 @@ function exportDhNow() {
 
 function autosaveDhExport() {
   const dh = dhApi();
-  if (!dh) return; // not loaded yet — skip this tick silently
+  if (!dh || !SESSION) return; // not loaded / no session — skip this tick silently
   saveDhExport(dh.getExportJson(), { silent: true });
 }
 
-async function restoreDhExport() {
-  try {
-    const r = await api("/api/sample/dh-export");
-    if (r.export) $("dhExport").value = JSON.stringify(r.export);
-    setDhSavedIndicator(r.saved_at);
-  } catch { /* non-fatal: no draft yet, or server unreachable */ }
+// Push a saved export object back into the DH grid once the iframe is ready.
+function loadDhGridWhenReady(exportObj) {
+  if (!exportObj) return;
+  const poll = setInterval(() => {
+    const dh = dhApi();
+    if (!dh || !dh.loadExportJson) return;
+    clearInterval(poll);
+    try { dh.loadExportJson(exportObj); } catch { /* schema mismatch — leave grid empty */ }
+  }, 500);
+  setTimeout(() => clearInterval(poll), 15000); // give up after 15s
 }
 
-function waitForDhReady() {
+function startDhAutosave() {
   const poll = setInterval(() => {
     if (!dhApi()) return;
     clearInterval(poll);
-    restoreDhExport();
     if (dhAutosaveTimer) clearInterval(dhAutosaveTimer);
     dhAutosaveTimer = setInterval(autosaveDhExport, DH_AUTOSAVE_INTERVAL_MS);
   }, 500);
 }
-$("dhFrame").addEventListener("load", waitForDhReady);
+$("dhFrame").addEventListener("load", startDhAutosave);
 
 // ---------------------------------------------------------------------------
 // Samples
@@ -269,6 +431,7 @@ async function prepareSamples() {
     banner("prepBanner", true, `Prepared ${r.count} sample record(s). Ready to submit.`);
     renderTable("prepOut", r.records);
     $("sampleSubmitBtn").disabled = r.count === 0;
+    scheduleSave();
   } catch (e) { banner("prepBanner", false, e.message); $("sampleSubmitBtn").disabled = true; }
 }
 async function submitSamples() {
@@ -284,6 +447,7 @@ async function submitSamples() {
       SELECTED_SAMPLE = "";
       renderReadSampleList();
     }
+    scheduleSave();
   } catch (e) {
     banner("sampleBanner", false, e.message);
     renderSampleSubmission("sampleOut", { accessions: [], logs: [`ERROR: ${e.message}`] });
@@ -445,6 +609,7 @@ async function scanReads() {
     RUN_ROWS = r.groups.map(blankRun);
     renderRunTable();
     banner("readsBanner", true, `Found ${r.count} read group(s) in ${r.host_reads_dir}.`);
+    scheduleSave();
   } catch (e) { banner("readsBanner", false, e.message); }
 }
 async function suggestSamples() {
@@ -457,13 +622,24 @@ async function suggestSamples() {
     renderRunTable();
     renderReadSampleList();
     banner("readsBanner", true, `Auto-assigned ${r.groups.filter((g) => g.suggested_sample).length}/${r.groups.length} group(s).`);
+    scheduleSave();
   } catch (e) { banner("readsBanner", false, e.message); }
 }
+function runStatusCell(name) {
+  const led = READS_RUNS[name];
+  if (!led) return { text: "—", title: "not yet submitted in this session" };
+  const acc = led.run_accession || led.experiment_accession || "";
+  if (led.status === "done") return { text: `✓ done ${acc}`.trim(), title: "submitted in this session" };
+  if (led.status === "already_in_ena") return { text: `● in ENA ${acc}`.trim(), title: "already present in ENA — skipped on resume" };
+  if (led.status === "failed") return { text: "✗ failed", title: "last submission failed" };
+  return { text: led.status, title: led.status };
+}
+
 function renderRunTable() {
   const cols = ["NAME", "files", "SAMPLE", "STUDY", "PLATFORM", "INSTRUMENT", "LIBRARY_SOURCE", "LIBRARY_SELECTION", "LIBRARY_STRATEGY"];
   const head = $("runTable").querySelector("thead");
   const body = $("runTable").querySelector("tbody");
-  head.innerHTML = "<tr><th></th>" + cols.map((c) => `<th>${c}</th>`).join("") + "</tr>";
+  head.innerHTML = "<tr><th></th>" + cols.map((c) => `<th>${c}</th>`).join("") + "<th>status</th><th>re-upload</th></tr>";
   body.innerHTML = "";
   RUN_ROWS.forEach((row, i) => {
     const tr = document.createElement("tr");
@@ -474,6 +650,7 @@ function renderRunTable() {
       RUN_ROWS[i].confidence = "manual";
       renderRunTable();
       renderReadSampleList();
+      scheduleSave();
     };
 
     const removeTd = document.createElement("td");
@@ -487,6 +664,7 @@ function renderRunTable() {
       RUN_ROWS.splice(i, 1);
       renderRunTable();
       renderReadSampleList();
+      scheduleSave();
     };
     removeTd.appendChild(removeBtn);
     tr.appendChild(removeTd);
@@ -502,11 +680,33 @@ function renderRunTable() {
         inp.oninput = (e) => {
           RUN_ROWS[i][c] = e.target.value;
           if (c === "SAMPLE" || c === "FASTQ" || c === "FASTQ1" || c === "FASTQ2") renderReadSampleList();
+          scheduleSave();
         };
         td.appendChild(inp);
       }
       tr.appendChild(td);
     });
+
+    // status (resume ledger)
+    const statusTd = document.createElement("td");
+    const st = runStatusCell(row.NAME);
+    statusTd.textContent = st.text;
+    statusTd.title = st.title;
+    statusTd.className = "wrap";
+    tr.appendChild(statusTd);
+
+    // re-upload toggle
+    const reTd = document.createElement("td");
+    const reChk = document.createElement("input");
+    reChk.type = "checkbox";
+    reChk.style.width = "auto";
+    reChk.checked = !!row.reupload;
+    reChk.title = "Re-submit this run under a fresh alias even if it's already in ENA";
+    reChk.onchange = (e) => { RUN_ROWS[i].reupload = e.target.checked; scheduleSave(); };
+    reChk.onclick = (e) => e.stopPropagation();
+    reTd.appendChild(reChk);
+    tr.appendChild(reTd);
+
     body.appendChild(tr);
   });
   const has = RUN_ROWS.length > 0;
@@ -521,6 +721,7 @@ function applyPreset() {
   const s = $("defaultStudy").value;
   if (s) RUN_ROWS.forEach((r) => { if (!r.STUDY) r.STUDY = s; });
   renderRunTable();
+  scheduleSave();
 }
 async function submitReads(doSubmit) {
   $("readsLog").textContent = "";
@@ -528,11 +729,15 @@ async function submitReads(doSubmit) {
   try {
     const runs = RUN_ROWS.map((r) => {
       const o = { NAME: r.NAME, STUDY: r.STUDY, SAMPLE: r.SAMPLE, PLATFORM: r.PLATFORM, INSTRUMENT: r.INSTRUMENT,
-        LIBRARY_SOURCE: r.LIBRARY_SOURCE, LIBRARY_SELECTION: r.LIBRARY_SELECTION, LIBRARY_STRATEGY: r.LIBRARY_STRATEGY };
+        LIBRARY_SOURCE: r.LIBRARY_SOURCE, LIBRARY_SELECTION: r.LIBRARY_SELECTION, LIBRARY_STRATEGY: r.LIBRARY_STRATEGY,
+        reupload: !!r.reupload };
       if (r.paired) { o.FASTQ1 = r.FASTQ1; o.FASTQ2 = r.FASTQ2; } else { o.FASTQ = r.FASTQ; }
       return o;
     });
-    const { job_id } = await api("/api/reads/submit", { method: "POST", body: JSON.stringify({ runs, test: TEST, submit: doSubmit }) });
+    const { job_id } = await api("/api/reads/submit", { method: "POST", body: JSON.stringify({
+      runs, test: TEST, submit: doSubmit,
+      session_id: SESSION ? SESSION.id : null, force_reupload: $("forceReupload").checked,
+    }) });
     streamReads(job_id);
   } catch (e) { banner("readsBanner", false, e.message); }
 }
@@ -544,11 +749,29 @@ function streamReads(jobId) {
     const m = JSON.parse(ev.data);
     if (m.error) { banner("readsBanner", false, m.error); es.close(); return; }
     if (m.line != null) { log.textContent += m.line + "\n"; log.scrollTop = log.scrollHeight; }
-    if (m.result) { results.push(m.result); }
+    if (m.result) {
+      results.push(m.result);
+      // Update the per-run resume ledger from each result as it lands.
+      const r = m.result;
+      if (r.name) {
+        READS_RUNS[r.name] = {
+          run_name: r.name,
+          status: r.skipped ? (r.reason === "already_in_ena" ? "already_in_ena" : "done")
+            : (r.success ? "done" : "failed"),
+          experiment_accession: r.experiment_accession || "",
+          run_accession: r.run_accession || "",
+        };
+      }
+    }
     if (m.done) {
       const ok = m.results.every((r) => r.success);
-      banner("readsBanner", ok, ok ? `All ${m.results.length} run(s) succeeded.` : "Some runs failed — see results.");
+      const skipped = m.results.filter((r) => r.skipped).length;
+      banner("readsBanner", ok,
+        ok ? `Done: ${m.results.length} run(s)${skipped ? `, ${skipped} skipped (already in ENA)` : ""}.`
+           : "Some runs failed — see results.");
       renderTable("readsResults", m.results);
+      renderRunTable();   // refresh per-row status column
+      saveSessionNow();   // persist log + results + ledger immediately
       es.close();
     }
   };
@@ -596,6 +819,7 @@ async function loadRecords(entity, outId, status = "all", withActions = false) {
     if (withActions) renderRecordsWithActions(outId, entity, rows);
     else renderTable(outId, rows);
     if ($("recBanner") && outId === "recOut") banner("recBanner", true, `${rows.length} ${entity}.`);
+    scheduleSave();
   } catch (e) {
     appendLog("recLog", `ERROR: ${e.message}`);
     if ($("recBanner")) banner("recBanner", false, e.message);
@@ -627,10 +851,31 @@ async function recAction(action, accession) {
     const r = await api("/api/records/action", { method: "POST", body: JSON.stringify({ action, accession, test: TEST, hold_until: hold }) });
     appendLog("recLog", `${action} ${accession}: ${r.success ? "ok" : "failed"} — ${r.messages || ""}`);
     banner("recBanner", r.success, `${action} ${accession}: ${r.success ? "ok" : "failed"} — ${r.messages || ""}`);
+    scheduleSave();
   } catch (e) {
     appendLog("recLog", `ERROR: ${e.message}`);
     banner("recBanner", false, e.message);
   }
 }
 
-refreshHealth();
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+
+// Persist field edits (text inputs, selects, checkboxes) as the user types.
+// Credentials inputs are excluded — they are never part of session state.
+document.querySelector("main").addEventListener("input", (e) => {
+  if (e.target.id === "username" || e.target.id === "password" || e.target.id === "browsePathInput") return;
+  scheduleSave();
+});
+document.querySelector("main").addEventListener("change", (e) => {
+  if (e.target.id === "username" || e.target.id === "password") return;
+  scheduleSave();
+});
+
+async function init() {
+  await refreshHealth();
+  setSessionChip();          // no session yet -> body.no-session (blurs/locks tabs)
+  openSessionModal();        // force a session pick on load
+}
+init();

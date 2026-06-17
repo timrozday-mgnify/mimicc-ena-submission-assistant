@@ -74,8 +74,15 @@ def mock_logs_failure(**kwargs):
 
 
 @pytest.fixture(scope="session")
-def live_server_url():
+def live_server_url(tmp_path_factory):
+    import session_store
     import uvicorn
+
+    # Point the session store at a throwaway dir (the default /sessions is not
+    # writable in the test environment).
+    sessions_dir = tmp_path_factory.mktemp("sessions")
+    session_store._SESSIONS_DIR = sessions_dir
+    session_store._DB_PATH = sessions_dir / "sessions.db"
 
     _main._credentials = ("Webin-test", "secret")
     _main.webin_runner.iter_webin_cli_logs = lambda **kw: mock_logs_success(**kw)
