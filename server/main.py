@@ -91,6 +91,17 @@ def _current_output_host_dir() -> str:
 _DH_SCHEMA_CONTAINER_DIR = pathlib.Path(os.environ.get("DH_SCHEMA_CONTAINER_DIR", "/dh-schema"))
 _HOST_DH_SCHEMA_DIR = os.environ.get("HOST_DH_SCHEMA_DIR", str(_DH_SCHEMA_CONTAINER_DIR))
 
+# DataHarmonizer export draft (read-write mount) — the sample data exported
+# from the embedded DH grid via the Samples tab's "Export to Prepare" button
+# or its periodic autosave, picked up by the Prepare step.
+_DH_DRAFT_CONTAINER_DIR = pathlib.Path(os.environ.get("DH_DRAFT_CONTAINER_DIR", "/dh-draft"))
+_DH_DRAFT_FILE = _DH_DRAFT_CONTAINER_DIR / "export.json"
+
+
+def _iso_mtime(path: pathlib.Path) -> str:
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).isoformat()
+
+
 # In-memory stores only.
 _jobs: dict[str, dict[str, Any]] = {}
 _credentials: tuple[str, str] | None = None
@@ -119,6 +130,10 @@ class StudySubmitRequest(BaseModel):
     modify: bool = False
     hold_until: str | None = None
     public: bool = False
+
+
+class DhExportRequest(BaseModel):
+    export: dict[str, Any]
 
 
 class PrepareRequest(BaseModel):
@@ -262,6 +277,24 @@ def study_list(test: bool = True, status: str = "all", max_results: int = 5000) 
 # ---------------------------------------------------------------------------
 # Samples
 # ---------------------------------------------------------------------------
+
+
+@app.post("/api/sample/dh-export")
+def save_dh_export(req: DhExportRequest) -> dict[str, Any]:
+    """Persist the DataHarmonizer export draft (manual export or autosave)."""
+    _DH_DRAFT_CONTAINER_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = _DH_DRAFT_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(req.export))
+    tmp.replace(_DH_DRAFT_FILE)  # atomic on POSIX
+    return {"status": "ok", "saved_at": _iso_mtime(_DH_DRAFT_FILE)}
+
+
+@app.get("/api/sample/dh-export")
+def get_dh_export() -> dict[str, Any]:
+    """Return the most recently saved DataHarmonizer export draft, if any."""
+    if not _DH_DRAFT_FILE.is_file():
+        return {"export": None, "saved_at": None}
+    return {"export": json.loads(_DH_DRAFT_FILE.read_text()), "saved_at": _iso_mtime(_DH_DRAFT_FILE)}
 
 
 @app.post("/api/sample/prepare")

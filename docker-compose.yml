@@ -34,6 +34,9 @@ services:
       - ${MIMICC_DH_BUNDLE_DIR:-${HOME}/.mimicc-ena/dh-bundle}:/app/server/static/dh
       # Editable LinkML schema used to rebuild the DH bundle on demand.
       - ${MIMICC_DH_SCHEMA_DIR:-${HOME}/.mimicc-ena/dh-schema}:/dh-schema
+      # Autosaved/exported DataHarmonizer sample data (export.json), written
+      # by the "Export to Prepare" button and the periodic autosave.
+      - ${MIMICC_DH_DRAFT_DIR:-${HOME}/.mimicc-ena/dh-draft}:/dh-draft
     environment:
       - HOST_HOME=${HOME}
       - HOST_LOGS_DIR=${HOME}/.mimicc-ena/logs
@@ -48,4 +51,5 @@ services:
       - HOST_DH_OUTPUT_DIR=${MIMICC_DH_BUNDLE_DIR:-${HOME}/.mimicc-ena/dh-bundle}
       - HOST_DH_SCHEMA_DIR=${MIMICC_DH_SCHEMA_DIR:-${HOME}/.mimicc-ena/dh-schema}
       - DH_SCHEMA_CONTAINER_DIR=/dh-schema
+      - DH_DRAFT_CONTAINER_DIR=/dh-draft
     restart: unless-stopped

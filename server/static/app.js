@@ -74,7 +74,7 @@ function togglePanelMax(panelId) {
   const wasMaximized = panel.classList.contains("maximized");
   document.querySelectorAll(".panel.maximized").forEach((el) => {
     el.classList.remove("maximized");
-    const btn = el.querySelector(".panel-head button");
+    const btn = el.querySelector(".panel-head .maximize-toggle-btn");
     if (btn) {
       btn.textContent = "⛶";
       btn.title = "Maximize panel";
@@ -84,7 +84,7 @@ function togglePanelMax(panelId) {
 
   if (!wasMaximized) {
     panel.classList.add("maximized");
-    const btn = panel.querySelector(".panel-head button");
+    const btn = panel.querySelector(".panel-head .maximize-toggle-btn");
     if (btn) {
       btn.textContent = "−";
       btn.title = "Minimize panel";
@@ -185,6 +185,71 @@ async function submitStudies() {
     renderTable("studyOut", r.accessions);
   } catch (e) { banner("studyBanner", false, e.message); }
 }
+
+// ---------------------------------------------------------------------------
+// Samples: DataHarmonizer export integration (button + autosave)
+// ---------------------------------------------------------------------------
+const DH_AUTOSAVE_INTERVAL_MS = 30000;
+let dhAutosaveTimer = null;
+
+// The DataHarmonizer iframe is same-origin, so its window.dataHarmonizer hook
+// (added to the DataHarmonizer fork — see web/index.js there) is directly
+// reachable. Returns null until the grid has finished loading.
+function dhApi() {
+  const frame = $("dhFrame");
+  const win = frame && frame.contentWindow;
+  return win && win.dataHarmonizer && win.dataHarmonizer.ready ? win.dataHarmonizer : null;
+}
+
+function formatSavedAt(isoTs) {
+  return isoTs ? new Date(isoTs).toLocaleTimeString() : "never";
+}
+
+function setDhSavedIndicator(isoTs) {
+  $("dhSavedIndicator").textContent = "Last saved: " + formatSavedAt(isoTs);
+}
+
+async function saveDhExport(exportJson, { silent = false } = {}) {
+  try {
+    const r = await api("/api/sample/dh-export", { method: "POST", body: JSON.stringify({ export: exportJson }) });
+    $("dhExport").value = JSON.stringify(exportJson);
+    setDhSavedIndicator(r.saved_at);
+    if (!silent) banner("prepBanner", true, "Exported from DataHarmonizer.");
+  } catch (e) {
+    if (!silent) banner("prepBanner", false, e.message);
+  }
+}
+
+function exportDhNow() {
+  const dh = dhApi();
+  if (!dh) { banner("prepBanner", false, "DataHarmonizer isn't ready yet."); return; }
+  saveDhExport(dh.getExportJson());
+}
+
+function autosaveDhExport() {
+  const dh = dhApi();
+  if (!dh) return; // not loaded yet — skip this tick silently
+  saveDhExport(dh.getExportJson(), { silent: true });
+}
+
+async function restoreDhExport() {
+  try {
+    const r = await api("/api/sample/dh-export");
+    if (r.export) $("dhExport").value = JSON.stringify(r.export);
+    setDhSavedIndicator(r.saved_at);
+  } catch { /* non-fatal: no draft yet, or server unreachable */ }
+}
+
+function waitForDhReady() {
+  const poll = setInterval(() => {
+    if (!dhApi()) return;
+    clearInterval(poll);
+    restoreDhExport();
+    if (dhAutosaveTimer) clearInterval(dhAutosaveTimer);
+    dhAutosaveTimer = setInterval(autosaveDhExport, DH_AUTOSAVE_INTERVAL_MS);
+  }, 500);
+}
+$("dhFrame").addEventListener("load", waitForDhReady);
 
 // ---------------------------------------------------------------------------
 // Samples
