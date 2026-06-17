@@ -1,0 +1,14 @@
+# Web app
+fastapi
+uvicorn[standard]
+sse-starlette
+
+# ena-api-client (vendored onto sys.path) + ena-dh scripts dependencies
+httpx
+pydantic>=2
+pydantic-settings>=2
+PyYAML
+lxml
+pendulum
+typer
+linkml

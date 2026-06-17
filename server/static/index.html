@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MIMICC ENA Submission Assistant</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    --bg:#0f1419; --panel:#1a2129; --line:#2c3540; --fg:#e6edf3; --muted:#8b98a5;
+    --accent:#2f81f7; --ok:#2ea043; --bad:#d1242f; --warn:#bb8009;
+    --btn2-bg:#30363d; --btn2-fg:#fff; --code-bg:#0b0f14;
+  }
+  :root[data-theme="light"] {
+    --bg:#ffffff; --panel:#f6f8fa; --line:#d0d7de; --fg:#1f2328; --muted:#636c76;
+    --accent:#0969da; --ok:#1a7f37; --bad:#cf222e; --warn:#9a6700;
+    --btn2-bg:#e1e4e8; --btn2-fg:#1f2328; --code-bg:#eef1f4;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--fg); }
+  header { display:flex; align-items:center; gap:16px; padding:10px 18px; background:var(--panel); border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; margin:0; flex:1; }
+  .env { display:flex; align-items:center; gap:8px; }
+  .pill { padding:2px 10px; border-radius:12px; font-size:12px; font-weight:600; }
+  .pill.test { background:#1f3b22; color:#5fd97a; }
+  .pill.prod { background:#3b1f22; color:#ff7b72; }
+  .creds-status { font-size:12px; color:var(--muted); }
+  .creds-status.on { color:#5fd97a; }
+  nav { display:flex; gap:2px; background:var(--panel); padding:0 12px; border-bottom:1px solid var(--line); }
+  nav button { background:none; border:none; color:var(--muted); padding:10px 16px; cursor:pointer; font-size:14px; border-bottom:2px solid transparent; }
+  nav button.active { color:var(--fg); border-bottom-color:var(--accent); }
+  main { padding:18px; max-width:1100px; margin:0 auto; }
+  .tab { display:none; }
+  .tab.active { display:block; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px; margin-bottom:16px; }
+  .panel-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+  .panel-head h2 { margin:0; }
+  .panel.maximized { position:fixed; inset:10px; z-index:20; margin:0; display:flex; flex-direction:column; overflow:hidden;
+                     box-shadow:0 20px 80px rgba(0,0,0,.45); }
+  body.has-maximized-panel { overflow:hidden; }
+  .panel.maximized .panel-body { min-height:0; flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  h2 { font-size:15px; margin:0 0 12px; }
+  h3 { font-size:13px; color:var(--muted); margin:16px 0 6px; text-transform:uppercase; letter-spacing:.04em; }
+  label { display:block; font-size:12px; color:var(--muted); margin:8px 0 3px; }
+  input, select, textarea, button { font:inherit; }
+  input, select, textarea { background:var(--bg); border:1px solid var(--line); color:var(--fg); border-radius:6px; padding:7px 9px; width:100%; }
+  textarea { min-height:120px; font-family:ui-monospace,Menlo,monospace; font-size:12px; resize:vertical; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; }
+  .row > * { flex:1; min-width:140px; }
+  .btn { background:var(--accent); color:#fff; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; width:auto; font-weight:600; }
+  .btn.secondary { background:var(--btn2-bg); color:var(--btn2-fg); }
+  .btn.danger { background:var(--bad); }
+  .btn:disabled { opacity:.5; cursor:not-allowed; }
+  .actions { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  table { width:100%; border-collapse:collapse; font-size:12px; margin-top:10px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--muted); font-weight:600; }
+  td.wrap, th.wrap { white-space:normal; }
+  .scroll { overflow:auto; max-height:380px; border:1px solid var(--line); border-radius:6px; }
+  .log { background:#000; color:#c9d1d9; font-family:ui-monospace,Menlo,monospace; font-size:12px; padding:10px; border-radius:6px; height:280px; overflow:auto; white-space:pre-wrap; }
+  .banner { padding:10px 12px; border-radius:6px; margin-top:10px; font-weight:600; display:none; }
+  .banner.ok { background:#10301a; color:#5fd97a; display:block; }
+  .banner.bad { background:#301013; color:#ff7b72; display:block; }
+  .muted { color:var(--muted); }
+  .tag { font-size:11px; padding:1px 6px; border-radius:8px; background:var(--btn2-bg); color:var(--btn2-fg); }
+  .tag.high { background:#10301a; color:#5fd97a; }
+  #dhWrap { width:100%; height:850px; min-height:200px; max-height:90vh; resize:vertical; overflow:auto;
+            border:1px solid var(--line); border-radius:6px; }
+  #dhFrame { width:100%; height:100%; border:none; display:block; background:#fff; }
+  .inline { display:flex; align-items:center; gap:6px; }
+  .inline input[type=checkbox] { width:auto; }
+  code { background:var(--code-bg); padding:1px 5px; border-radius:4px; }
+  .theme-select { background:var(--bg); border:1px solid var(--line); color:var(--fg); border-radius:6px;
+                  padding:4px 8px; font-size:12px; width:auto; }
+  .subpanel { border:1px solid var(--line); border-radius:6px; padding:12px; margin-top:10px; background:var(--bg); }
+  .dirlist a { color:var(--fg); text-decoration:none; display:block; padding:4px 6px; border-radius:4px; }
+  .dirlist a:hover { background:var(--panel); }
+  .assign-grid { --assign-table-height:380px; display:grid; grid-template-columns:minmax(220px, 280px) minmax(0, 1fr); gap:12px; margin-top:12px; align-items:start; }
+  .assign-grid > .scroll, .sample-list { height:var(--assign-table-height); max-height:var(--assign-table-height); }
+  .sample-list { overflow:auto; border:1px solid var(--line); border-radius:6px; }
+  .sample-item { display:block; width:100%; text-align:left; background:transparent; color:var(--fg); border:0; border-bottom:1px solid var(--line);
+                 border-radius:0; padding:8px 10px; cursor:pointer; }
+  .sample-item:last-child { border-bottom:0; }
+  .sample-item:hover, .sample-item.selected { background:var(--bg); }
+  .sample-main { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .sample-name { font-weight:600; overflow-wrap:anywhere; }
+  .sample-accession { color:var(--muted); font-family:ui-monospace,Menlo,monospace; font-size:11px; overflow-wrap:anywhere; margin-top:2px; }
+  .sample-count { flex:0 0 auto; }
+  #runTable tbody tr.assignable { cursor:pointer; }
+  #runTable tbody tr.assignable:hover { background:var(--bg); }
+  .icon-btn { background:var(--btn2-bg); color:var(--btn2-fg); border:1px solid var(--line); border-radius:6px; padding:3px 7px; cursor:pointer; width:auto; }
+  .icon-btn.danger { color:#ff7b72; }
+  .panel.maximized #dhWrap { height:100%; max-height:none; resize:none; }
+  .panel.maximized .assign-grid { --assign-table-height:100%; flex:1; min-height:0; }
+  .panel.maximized .assign-grid > div, .panel.maximized .assign-grid > .scroll { min-height:0; }
+  .panel.maximized .sample-list, .panel.maximized .assign-grid > .scroll { height:100%; max-height:none; }
+  @media (max-width: 820px) { .assign-grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>MIMICC ENA Submission Assistant</h1>
+  <div class="env">
+    <span class="creds-status" id="credStatus">credentials: not set</span>
+    <span class="pill test" id="envPill">TEST</span>
+    <label class="inline" style="margin:0;color:var(--fg)"><input type="checkbox" id="prodToggle"> production</label>
+    <select id="themeSelect" class="theme-select" title="Theme">
+      <option value="system">Theme: System</option>
+      <option value="dark">Theme: Dark</option>
+      <option value="light">Theme: Light</option>
+    </select>
+  </div>
+</header>
+<nav>
+  <button data-tab="creds" class="active">Credentials</button>
+  <button data-tab="studies">Studies</button>
+  <button data-tab="samples">Samples</button>
+  <button data-tab="reads">Reads</button>
+  <button data-tab="records">Records</button>
+</nav>
+<main>
+
+  <!-- CREDENTIALS -->
+  <section class="tab active" id="tab-creds">
+    <div class="panel">
+      <h2>Webin credentials</h2>
+      <p class="muted">Stored in server memory only — never written to disk or logged. Re-enter after a server restart.</p>
+      <div class="row">
+        <div><label>Webin username</label><input id="username" placeholder="Webin-XXXXX" autocomplete="username"></div>
+        <div><label>Password</label><input id="password" type="password" autocomplete="current-password"></div>
+      </div>
+      <div class="actions">
+        <button class="btn" onclick="saveCreds()">Save</button>
+        <button class="btn secondary" onclick="clearCreds()">Clear</button>
+      </div>
+      <div class="banner" id="credBanner"></div>
+    </div>
+    <div class="panel">
+      <h2>Workflow</h2>
+      <p class="muted">1. Create a <b>study</b> → 2. Enter sample metadata in <b>Samples</b> (DataHarmonizer) → prepare & submit →
+      3. In <b>Reads</b>, assign FASTQ files to samples and submit via webin-cli →
+      4. Manage everything in <b>Records</b>. The <span class="pill test">TEST</span>/<span class="pill prod">PROD</span> toggle
+      (top right) selects the ENA service for every action.</p>
+    </div>
+  </section>
+
+  <!-- STUDIES -->
+  <section class="tab" id="tab-studies">
+    <div class="panel">
+      <h2>Create / modify studies</h2>
+      <p class="muted">Provide study records as a JSON array (keys: <code>alias</code>, <code>STUDY_TITLE</code>,
+        <code>STUDY_ABSTRACT</code>/<code>STUDY_DESCRIPTION</code>, optional <code>CENTER_PROJECT_NAME</code>).</p>
+      <textarea id="studyJson">[
+  {
+    "alias": "mimicc-run-A",
+    "STUDY_TITLE": "MIMICC continuous culture run A",
+    "STUDY_ABSTRACT": "20-member synthetic gut community grown in continuous culture."
+  }
+]</textarea>
+      <div class="row" style="margin-top:8px">
+        <div><label>Hold until (optional, YYYY-MM-DD)</label><input id="studyHold" placeholder="2026-12-01"></div>
+        <div class="inline" style="align-self:flex-end"><input type="checkbox" id="studyModify"><label style="margin:0">modify existing (match by alias/title)</label></div>
+        <div class="inline" style="align-self:flex-end"><input type="checkbox" id="studyPublic"><label style="margin:0">release public after</label></div>
+      </div>
+      <div class="actions">
+        <button class="btn" onclick="submitStudies()">Submit studies</button>
+        <button class="btn secondary" onclick="loadRecords('studies','studyOut')">List my studies</button>
+      </div>
+      <div class="banner" id="studyBanner"></div>
+      <div class="scroll" id="studyOut"></div>
+    </div>
+  </section>
+
+  <!-- SAMPLES -->
+  <section class="tab" id="tab-samples">
+    <div class="panel maximizable" id="dhPanel">
+      <div class="panel-head">
+        <h2>1 · Enter sample metadata (DataHarmonizer)</h2>
+        <button class="icon-btn" type="button" onclick="togglePanelMax('dhPanel')" title="Maximize panel" aria-label="Maximize panel">⛶</button>
+      </div>
+      <div class="panel-body">
+        <div id="dhWrap"><iframe id="dhFrame" src="/dh/"></iframe></div>
+        <p class="muted" id="dhMissing" style="display:none">DataHarmonizer bundle not built. Run
+          <code>bash scripts/build_dh_template.sh</code>, or just export from a standalone DataHarmonizer and upload the JSON below.</p>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>2 · Prepare DH export</h2>
+      <p class="muted">Export from DataHarmonizer as <b>JSON</b>, then upload or paste it. The server filters to
+        sample/study fields and renames columns to ENA field names.</p>
+      <div class="row">
+        <div><label>Upload DH export (.json)</label><input type="file" id="dhFile" accept=".json" onchange="loadDhFile()"></div>
+        <div><label>Column filter (SQL WHERE on slot metadata)</label><input id="sampleFilter"></div>
+      </div>
+      <label>Or paste DH export JSON</label>
+      <textarea id="dhExport" placeholder='{ "Container": { "MIMICC_SampleExperiments": [ ... ] } }'></textarea>
+      <div class="actions"><button class="btn" onclick="prepareSamples()">Prepare</button></div>
+      <div class="banner" id="prepBanner"></div>
+      <div class="scroll" id="prepOut"></div>
+    </div>
+    <div class="panel">
+      <h2>3 · Submit samples</h2>
+      <div class="row">
+        <div><label>Checklist</label><input id="sampleChecklist" value="ERC000025"></div>
+        <div><label>Hold until (optional)</label><input id="sampleHold" placeholder="2026-12-01"></div>
+        <div class="inline" style="align-self:flex-end"><input type="checkbox" id="sampleModify"><label style="margin:0">modify existing</label></div>
+        <div class="inline" style="align-self:flex-end"><input type="checkbox" id="samplePublic"><label style="margin:0">release public</label></div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="sampleSubmitBtn" onclick="submitSamples()" disabled>Submit prepared samples</button>
+        <button class="btn secondary" onclick="loadRecords('samples','sampleOut')">List my samples</button>
+      </div>
+      <div class="banner" id="sampleBanner"></div>
+      <div class="scroll" id="sampleOut"></div>
+    </div>
+  </section>
+
+  <!-- READS -->
+  <section class="tab" id="tab-reads">
+    <div class="panel">
+      <h2>1 · Scan reads workspace</h2>
+      <p class="muted">Place FASTQ/BAM/CRAM files in the active directory below, or browse to a different folder on disk.
+        Paired-end mates (<code>_R1/_R2</code> or <code>_1/_2</code>) are grouped automatically.</p>
+      <label>Active reads directory</label>
+      <input id="readsDirLabel" readonly>
+      <div class="actions">
+        <button class="btn secondary" onclick="toggleBrowser()">Browse…</button>
+        <button class="btn secondary" id="resetDirBtn" onclick="resetReadsDir()" style="display:none">Reset to default</button>
+        <button class="btn" onclick="scanReads()">Scan</button>
+        <button class="btn secondary" onclick="suggestSamples()">Auto-assign samples</button>
+      </div>
+      <div id="dirBrowser" class="subpanel" style="display:none">
+        <label>Path</label>
+        <input id="browsePathInput" placeholder="/">
+        <div class="actions">
+          <button class="btn secondary" onclick="browseGo()">Go to path</button>
+          <button class="btn" onclick="selectBrowsedFolder()">Use this folder</button>
+          <button class="btn secondary" onclick="toggleBrowser()">Cancel</button>
+        </div>
+        <div class="scroll" id="browseList" style="margin-top:8px; max-height:260px"></div>
+      </div>
+    </div>
+    <div class="panel maximizable" id="readsAssignPanel">
+      <div class="panel-head">
+        <h2>2 · Assign samples & library metadata</h2>
+        <button class="icon-btn" type="button" onclick="togglePanelMax('readsAssignPanel')" title="Maximize panel" aria-label="Maximize panel">⛶</button>
+      </div>
+      <div class="panel-body">
+        <div class="row">
+          <div><label>Apply library preset to all rows</label>
+            <select id="presetSelect"><option value="">— choose preset —</option></select></div>
+          <div><label>Default STUDY accession</label><input id="defaultStudy" placeholder="PRJEB..."></div>
+          <div style="align-self:flex-end"><button class="btn secondary" onclick="applyPreset()">Apply preset</button></div>
+        </div>
+        <div class="assign-grid">
+          <div>
+            <div class="actions" style="margin-top:0">
+              <button class="btn secondary" onclick="loadReadSamples()">Load samples</button>
+            </div>
+            <div class="sample-list" id="readSampleList" style="margin-top:10px">
+              <p class="muted" style="padding:10px">Load samples to assign accessions.</p>
+            </div>
+          </div>
+          <div class="scroll"><table id="runTable"><thead></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="readsSubmitBtn" onclick="submitReads(true)" disabled>Submit reads to ENA</button>
+        <button class="btn secondary" id="readsValidateBtn" onclick="submitReads(false)" disabled>Validate only</button>
+      </div>
+      <div class="banner" id="readsBanner"></div>
+    </div>
+    <div class="panel">
+      <h2>3 · webin-cli log</h2>
+      <div class="log" id="readsLog"></div>
+      <div class="scroll" id="readsResults"></div>
+    </div>
+  </section>
+
+  <!-- RECORDS -->
+  <section class="tab" id="tab-records">
+    <div class="panel">
+      <h2>Account records</h2>
+      <div class="row">
+        <div><label>Entity</label><select id="recEntity">
+          <option value="studies">studies</option>
+          <option value="samples">samples</option>
+          <option value="runs">runs</option>
+          <option value="experiments">experiments</option>
+          <option value="analyses">analyses</option>
+        </select></div>
+        <div><label>Status</label><select id="recStatus">
+          <option value="all">all</option><option value="private">private</option><option value="public">public</option>
+        </select></div>
+        <div style="align-self:flex-end"><button class="btn" onclick="loadRecords(document.getElementById('recEntity').value,'recOut',document.getElementById('recStatus').value,true)">Fetch</button></div>
+      </div>
+      <div class="banner" id="recBanner"></div>
+      <div class="scroll" id="recOut"></div>
+    </div>
+  </section>
+
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>
