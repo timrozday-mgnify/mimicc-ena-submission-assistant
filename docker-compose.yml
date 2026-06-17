@@ -1,0 +1,51 @@
+services:
+  mimicc-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      additional_contexts:
+        # Local DataHarmonizer checkout used to build the embedded DH bundle
+        # (server/static/dh/) during the image build. Override if your
+        # checkout lives somewhere other than the default sibling path.
+        dataharmonizer-src: ${DATAHARMONIZER_DIR:-../DataHarmonizer}
+    container_name: mimicc-ena-submission-assistant
+    ports:
+      - "127.0.0.1:${MIMICC_PORT:-9000}:9000"
+    volumes:
+      # Spawn the enasequence/webin-cli sibling container for reads submission.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Read-write view of the whole host, used to browse to and read/write
+      # FASTQ/manifest files in an arbitrary directory the user picks (not
+      # just the fixed reads workspace below). The app already controls the
+      # host's Docker daemon via the socket mount above, so this doesn't
+      # meaningfully change the trust boundary of a tool that's meant to run
+      # as a single trusted local user.
+      - /:/hostroot
+      # Persistent per-job logs.
+      - ${HOME}/.mimicc-ena/logs:/app/logs
+      # Read-WRITE reads workspace: place FASTQ/BAM/CRAM files here. The server
+      # writes generated webin-cli manifests alongside them, and the sibling
+      # webin-cli container mounts the same host dir as its -inputDir.
+      - ${MIMICC_READS_DIR:-${HOME}/.mimicc-ena/reads}:/reads
+      # Built DataHarmonizer bundle, served at /dh. Bind-mounted (rather than
+      # baked into the image) so an on-demand rebuild (mimicc-dh-builder
+      # sibling container) can update it in place; seeded from the image's
+      # build-time bundle on first run (scripts/server_entrypoint.sh).
+      - ${MIMICC_DH_BUNDLE_DIR:-${HOME}/.mimicc-ena/dh-bundle}:/app/server/static/dh
+      # Editable LinkML schema used to rebuild the DH bundle on demand.
+      - ${MIMICC_DH_SCHEMA_DIR:-${HOME}/.mimicc-ena/dh-schema}:/dh-schema
+    environment:
+      - HOST_HOME=${HOME}
+      - HOST_LOGS_DIR=${HOME}/.mimicc-ena/logs
+      # Host path of the reads workspace (used for the sibling -v mount) and the
+      # container path the server reads/writes it through.
+      - HOST_READS_DIR=${MIMICC_READS_DIR:-${HOME}/.mimicc-ena/reads}
+      - READS_CONTAINER_DIR=/reads
+      - DEFAULT_OUTPUT_DIR=${HOME}/.mimicc-ena/output
+      # Host paths backing the DH bundle/schema mounts above (used for the
+      # mimicc-dh-builder sibling -v mounts) and the container path the
+      # server reads the schema through.
+      - HOST_DH_OUTPUT_DIR=${MIMICC_DH_BUNDLE_DIR:-${HOME}/.mimicc-ena/dh-bundle}
+      - HOST_DH_SCHEMA_DIR=${MIMICC_DH_SCHEMA_DIR:-${HOME}/.mimicc-ena/dh-schema}
+      - DH_SCHEMA_CONTAINER_DIR=/dh-schema
+    restart: unless-stopped
