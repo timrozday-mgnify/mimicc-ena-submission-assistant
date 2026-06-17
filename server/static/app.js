@@ -501,13 +501,40 @@ const RECORD_COLUMNS = {
   analyses: ["accession", "alias", "title", "study_accession", "status"],
 };
 
+function appendLog(id, text) {
+  const el = $(id);
+  if (!el) return;
+  const ts = new Date().toISOString().slice(11, 23);
+  el.textContent += `[${ts}] ${text}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function clearLog(id) {
+  const el = $(id);
+  if (el) el.textContent = "";
+}
+
 async function loadRecords(entity, outId, status = "all", withActions = false) {
+  appendLog("recLog", `Fetching ${entity} (status=${status}, test=${TEST})…`);
   try {
     const rows = await api(`/api/records/${entity}?test=${TEST}&status=${status}`);
+    appendLog("recLog", `Got ${rows.length} ${entity} row(s).`);
+    if (rows.length) {
+      // Log every field actually present (not just the columns the table
+      // shows) — this surfaces raw Reports API keys the alias mapping
+      // didn't recognise, which is exactly what's needed to debug a blank
+      // linking accession column.
+      const keys = [...new Set(rows.flatMap((r) => Object.keys(r)))];
+      appendLog("recLog", `Fields present: ${keys.join(", ")}`);
+      appendLog("recLog", `First row: ${JSON.stringify(rows[0])}`);
+    }
     if (withActions) renderRecordsWithActions(outId, entity, rows);
     else renderTable(outId, rows);
     if ($("recBanner") && outId === "recOut") banner("recBanner", true, `${rows.length} ${entity}.`);
-  } catch (e) { if ($("recBanner")) banner("recBanner", false, e.message); }
+  } catch (e) {
+    appendLog("recLog", `ERROR: ${e.message}`);
+    if ($("recBanner")) banner("recBanner", false, e.message);
+  }
 }
 function renderRecordsWithActions(outId, entity, rows) {
   const el = $(outId);
@@ -530,10 +557,15 @@ async function recAction(action, accession) {
   let hold = null;
   if (action === "hold") { hold = prompt("Hold until (YYYY-MM-DD):"); if (!hold) return; }
   if ((action === "cancel" || action === "kill") && !confirm(`${action} ${accession}?`)) return;
+  appendLog("recLog", `${action} ${accession}…`);
   try {
     const r = await api("/api/records/action", { method: "POST", body: JSON.stringify({ action, accession, test: TEST, hold_until: hold }) });
+    appendLog("recLog", `${action} ${accession}: ${r.success ? "ok" : "failed"} — ${r.messages || ""}`);
     banner("recBanner", r.success, `${action} ${accession}: ${r.success ? "ok" : "failed"} — ${r.messages || ""}`);
-  } catch (e) { banner("recBanner", false, e.message); }
+  } catch (e) {
+    appendLog("recLog", `ERROR: ${e.message}`);
+    banner("recBanner", false, e.message);
+  }
 }
 
 refreshHealth();
