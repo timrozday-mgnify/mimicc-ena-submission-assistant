@@ -296,6 +296,16 @@
       <div class="banner" id="recBanner"></div>
       <div class="scroll" id="recOut"></div>
     </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Debug log</h2>
+        <button class="icon-btn" type="button" onclick="clearLog('recLog')" title="Clear log" aria-label="Clear log">Clear</button>
+      </div>
+      <p class="muted">Logs each fetch, the field names present on the returned rows (including any
+        the table doesn't display), and the first raw row — useful for spotting why a linking
+        accession column (e.g. <code>study_accession</code>) came back blank.</p>
+      <div class="log" id="recLog"></div>
+    </div>
   </section>
 
 </main>
