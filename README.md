@@ -59,10 +59,10 @@ DataHarmonizer bundle itself, in a dedicated build stage.
 bash scripts/vendor.sh
 
 # 2. Put FASTQ/BAM/CRAM files in the reads workspace (default ~/.mimicc-ena/reads),
-#    or set MIMICC_READS_DIR. Also pre-create the DH bundle/schema/draft dirs
+#    or set MIMICC_READS_DIR. Also pre-create the DH bundle/schema + sessions dirs
 #    (bind mounts must exist before `docker compose up` — see MIMICC_DH_BUNDLE_DIR /
-#    MIMICC_DH_SCHEMA_DIR / MIMICC_DH_DRAFT_DIR in .env.example).
-mkdir -p ~/.mimicc-ena/reads ~/.mimicc-ena/dh-bundle ~/.mimicc-ena/dh-schema ~/.mimicc-ena/dh-draft
+#    MIMICC_DH_SCHEMA_DIR / MIMICC_SESSIONS_DIR in .env.example).
+mkdir -p ~/.mimicc-ena/reads ~/.mimicc-ena/dh-bundle ~/.mimicc-ena/dh-schema ~/.mimicc-ena/sessions
 
 # 3. Start (this also builds the embedded DataHarmonizer bundle — see
 #    "DataHarmonizer bundle build" below)
@@ -117,33 +117,53 @@ it's scaffolding for a future in-app template editor.
 
 The Samples tab's **Export to Prepare** button and its 30s autosave pull the current grid data
 straight out of the embedded DataHarmonizer iframe (same-origin, via
-`iframe.contentWindow.dataHarmonizer.getExportJson()`) and write it to
-`POST /api/sample/dh-export`, which persists it to `/dh-draft/export.json` (bind-mounted from
-`MIMICC_DH_DRAFT_DIR`, default `~/.mimicc-ena/dh-draft`) and populates the `#dhExport` textarea
-that the **Prepare** step already reads — no manual File → Save As → upload round trip. A
-`GET /api/sample/dh-export` on page load restores the last save (textarea + "Last saved" indicator)
-so a reload doesn't lose it.
+`iframe.contentWindow.dataHarmonizer.getExportJson()`), persist it to the active session
+(`POST /api/sessions/{id}/dh-export` → `<id>/dh_export.json`) and populate the `#dhExport` textarea
+that the **Prepare** step already reads — no manual File → Save As → upload round trip. On reopening
+a session the saved export is loaded **back into the grid** via
+`iframe.contentWindow.dataHarmonizer.loadExportJson(...)`.
 
 **This requires `window.dataHarmonizer` to exist in the DataHarmonizer bundle** — vanilla
-DataHarmonizer doesn't expose this; it's a small patch (`lib/Toolbar.js`: extract
-`buildExportJson`/`getExportJson` from `saveFile()`; `web/index.js`: expose
-`window.dataHarmonizer = {ready, getExportJson}` once the grid loads) applied directly to the
-`DataHarmonizer` checkout used as the `dataharmonizer-src` build context. Without it, the button
-shows "DataHarmonizer isn't ready yet" and the Samples tab falls back to the manual upload/paste
-flow described above.
+DataHarmonizer doesn't expose it; it's a small patch (`lib/Toolbar.js`: extract
+`buildExportJson` and add `getExportJson`/`loadExportJson`; `web/index.js`: expose
+`window.dataHarmonizer = {ready, getExportJson, loadExportJson}` once the grid loads) applied
+directly to the `DataHarmonizer` checkout used as the `dataharmonizer-src` build context. Without
+it, the button shows "DataHarmonizer isn't ready yet" and the Samples tab falls back to the manual
+upload/paste flow.
+
+## Submission sessions
+
+All work is organised around a **named submission session**, picked or created when the app opens
+(the tabs stay locked until one is active; the header shows the current session and a **Switch…**
+button). Everything about a session is saved to disk and restored when you reopen it:
+
+- **What's persisted** — every text field, checkbox and selection, the DataHarmonizer grid data,
+  all result tables, and the Reads/Records logs. Saving is automatic (debounced as you type, plus
+  immediately after submits); the header shows "saved …". **Credentials are never saved** — re-enter
+  them after a restart.
+- **Where** — `MIMICC_SESSIONS_DIR` (default `~/.mimicc-ena/sessions`): a SQLite registry
+  (`sessions.db`) plus a per-session directory (`<id>/state.json`, `<id>/dh_export.json`,
+  `<id>/logs/reads.log`).
+- **Resumable reads** — each run gets a stable, session-scoped alias. On submit, runs already
+  submitted in this session or already present in ENA (checked via the Reports API) are
+  **auto-skipped** and shown with their existing accessions, so an interrupted batch resumes by just
+  clicking **Submit** again. Tick a run's **Re-upload** box (or the global "force re-upload all"
+  toggle) to submit it again under a fresh alias (ENA aliases are permanent, so a forced re-upload
+  necessarily creates a new experiment/run).
 
 ## Using it
 
-1. **Credentials** — enter your Webin username/password (memory only).
-2. **Studies** — create a study → note the `PRJEB…` accession.
-3. **Samples** — enter metadata in DataHarmonizer, click **Export to Prepare** (autosaves every
+1. **Session** — create or open a named session (required before the tabs unlock).
+2. **Credentials** — enter your Webin username/password (memory only).
+3. **Studies** — create a study → note the `PRJEB…` accession.
+4. **Samples** — enter metadata in DataHarmonizer, click **Export to Prepare** (autosaves every
    30s too — see "Export integration" above), **Prepare** (filter + rename), then **Submit** with
    checklist `ERC000025` → `ERS…`/`SAMEA…`.
-4. **Reads** — **Scan** the active reads directory (default workspace, or
+5. **Reads** — **Scan** the active reads directory (default workspace, or
    **Browse…** to point at any folder on disk), **Auto-assign samples**, pick
    a library preset, set the study accession, then **Submit reads to ENA**
-   and watch the streamed webin-cli log → experiment + run accessions.
-5. **Records** — browse account records and release/hold/suppress/cancel.
+   and watch the streamed webin-cli log → experiment + run accessions. Re-submit to resume.
+6. **Records** — browse account records and release/hold/suppress/cancel.
 
 ## Development
 
@@ -177,6 +197,7 @@ server/
   main.py              FastAPI app: endpoints, jobs, SSE
   ena_service.py       studies/samples/records/actions (wraps reused libraries)
   read_assign.py       scan / suggest / manifest build for reads
+  session_store.py     submission sessions: SQLite registry + reads ledger + per-session files
   webin_runner.py      Docker-in-Docker adapter (from webin-cli-browser-assistant)
   dh_builder_runner.py Docker-in-Docker adapter for the DH bundle rebuild
   _bootstrap.py        puts vendored sibling code on sys.path

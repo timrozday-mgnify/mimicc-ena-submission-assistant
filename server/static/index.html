@@ -89,6 +89,18 @@
   #runTable tbody tr.assignable:hover { background:var(--bg); }
   .icon-btn { background:var(--btn2-bg); color:var(--btn2-fg); border:1px solid var(--line); border-radius:6px; padding:3px 7px; cursor:pointer; width:auto; }
   .icon-btn.danger { color:#ff7b72; }
+  .session-chip { display:inline-flex; align-items:center; gap:8px; font-size:12px; padding:2px 4px 2px 10px;
+                  border:1px solid var(--line); border-radius:12px; }
+  .session-chip #sessionName { font-weight:600; }
+  .modal-overlay { display:none; position:fixed; inset:0; z-index:50; background:rgba(0,0,0,.55);
+                   align-items:flex-start; justify-content:center; padding:48px 16px; overflow:auto; }
+  .modal-overlay.show { display:flex; }
+  .modal-box { width:100%; max-width:640px; margin:0; }
+  .session-row { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px;
+                 border-bottom:1px solid var(--line); }
+  .session-row:last-child { border-bottom:0; }
+  .session-row .meta { color:var(--muted); font-size:11px; }
+  body.no-session main, body.no-session nav { filter:blur(2px); pointer-events:none; user-select:none; }
   .panel.maximized #dhWrap { height:100%; max-height:none; resize:none; }
   .panel.maximized .assign-grid { --assign-table-height:100%; flex:1; min-height:0; }
   .panel.maximized .assign-grid > div, .panel.maximized .assign-grid > .scroll { min-height:0; }
@@ -100,6 +112,11 @@
 <header>
   <h1>MIMICC ENA Submission Assistant</h1>
   <div class="env">
+    <span class="session-chip" id="sessionChip" title="Current submission session">
+      <span id="sessionName">no session</span>
+      <span class="muted" id="sessionSaved"></span>
+      <button class="icon-btn" type="button" onclick="openSessionModal()" title="Switch session">Switch…</button>
+    </span>
     <span class="creds-status" id="credStatus">credentials: not set</span>
     <span class="pill test" id="envPill">TEST</span>
     <label class="inline" style="margin:0;color:var(--fg)"><input type="checkbox" id="prodToggle"> production</label>
@@ -110,6 +127,24 @@
     </select>
   </div>
 </header>
+
+<!-- SESSION PICKER (shown on load until a session is active) -->
+<div class="modal-overlay" id="sessionModal">
+  <div class="modal-box panel">
+    <h2>Submission session</h2>
+    <p class="muted">All of this session's work — DataHarmonizer data, form fields, logs and result
+      tables — is saved to disk under its name and restored when you reopen it. Credentials are never
+      saved.</p>
+    <h3>Open existing</h3>
+    <div class="scroll" id="sessionList" style="max-height:240px"><p class="muted" style="padding:10px">Loading…</p></div>
+    <h3>Create new</h3>
+    <div class="row">
+      <div style="flex:2"><label>Session name</label><input id="newSessionName" placeholder="e.g. MIMICC run A 2026-06"></div>
+      <div style="align-self:flex-end"><button class="btn" onclick="createSession()">Create &amp; open</button></div>
+    </div>
+    <div class="banner" id="sessionBanner"></div>
+  </div>
+</div>
 <nav>
   <button data-tab="creds" class="active">Credentials</button>
   <button data-tab="studies">Studies</button>
@@ -270,7 +305,11 @@
       <div class="actions">
         <button class="btn" id="readsSubmitBtn" onclick="submitReads(true)" disabled>Submit reads to ENA</button>
         <button class="btn secondary" id="readsValidateBtn" onclick="submitReads(false)" disabled>Validate only</button>
+        <label class="inline" style="align-self:center"><input type="checkbox" id="forceReupload"><span class="muted">force re-upload all (ignore "already in ENA")</span></label>
       </div>
+      <p class="muted">Runs already submitted in this session or already present in ENA are skipped automatically on
+        re-submit, so an interrupted batch resumes by just clicking Submit again. Tick a row's
+        <b>Re-upload</b> box (or the toggle above) to submit it again under a fresh alias.</p>
       <div class="banner" id="readsBanner"></div>
     </div>
     <div class="panel">

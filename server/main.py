@@ -29,6 +29,7 @@ from typing import Any
 import dh_builder_runner
 import ena_service
 import read_assign
+import session_store
 import webin_runner
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,7 +43,7 @@ app = FastAPI(title="mimicc-ena-submission-assistant")
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"http://localhost(:\d+)?",
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -91,18 +92,8 @@ def _current_output_host_dir() -> str:
 _DH_SCHEMA_CONTAINER_DIR = pathlib.Path(os.environ.get("DH_SCHEMA_CONTAINER_DIR", "/dh-schema"))
 _HOST_DH_SCHEMA_DIR = os.environ.get("HOST_DH_SCHEMA_DIR", str(_DH_SCHEMA_CONTAINER_DIR))
 
-# DataHarmonizer export draft (read-write mount) — the sample data exported
-# from the embedded DH grid via the Samples tab's "Export to Prepare" button
-# or its periodic autosave, picked up by the Prepare step.
-_DH_DRAFT_CONTAINER_DIR = pathlib.Path(os.environ.get("DH_DRAFT_CONTAINER_DIR", "/dh-draft"))
-_DH_DRAFT_FILE = _DH_DRAFT_CONTAINER_DIR / "export.json"
 
-
-def _iso_mtime(path: pathlib.Path) -> str:
-    return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).isoformat()
-
-
-# In-memory stores only.
+# In-memory stores only (credentials are never persisted to disk).
 _jobs: dict[str, dict[str, Any]] = {}
 _credentials: tuple[str, str] | None = None
 
@@ -111,6 +102,22 @@ def _creds() -> ena_service.Credentials:
     if _credentials is None:
         raise HTTPException(status_code=401, detail="Credentials not set. Enter your Webin username and password.")
     return ena_service.Credentials(username=_credentials[0], password=_credentials[1])
+
+
+def _skip_result(run: dict[str, Any], name: str, alias: str, accs: dict[str, Any], reason: str) -> dict[str, Any]:
+    """A result row for a run skipped during resume (already submitted/in ENA)."""
+    return {
+        "name": name,
+        "alias": alias,
+        "sample": run.get("SAMPLE", ""),
+        "study": run.get("STUDY", ""),
+        "exit_code": 0,
+        "success": True,
+        "skipped": True,
+        "reason": reason,
+        "experiment_accession": accs.get("experiment_accession", ""),
+        "run_accession": accs.get("run_accession", ""),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +175,18 @@ class ReadsSubmitRequest(BaseModel):
     runs: list[dict[str, Any]]
     test: bool = True
     submit: bool = True
+    session_id: str | None = None
+    force_reupload: bool = False
+
+
+class SessionCreateRequest(BaseModel):
+    name: str
+    test_env: bool = True
+
+
+class SessionStateRequest(BaseModel):
+    state: dict[str, Any]
+    test_env: bool | None = None
 
 
 class DhBuildRequest(BaseModel):
@@ -249,6 +268,75 @@ async def clear_credentials() -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
+# Submission sessions (named, persisted to disk; credentials never stored)
+# ---------------------------------------------------------------------------
+
+
+def _require_session(session_id: str) -> dict[str, Any]:
+    session = session_store.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
+
+
+@app.get("/api/sessions")
+def sessions_list() -> list[dict[str, Any]]:
+    return session_store.list_sessions()
+
+
+@app.post("/api/sessions")
+def sessions_create(req: SessionCreateRequest) -> dict[str, Any]:
+    try:
+        return session_store.create_session(req.name, test_env=req.test_env)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/sessions/{session_id}")
+def sessions_get(session_id: str) -> dict[str, Any]:
+    session = _require_session(session_id)
+    export, dh_saved_at = session_store.load_dh_export(session_id)
+    return {
+        "session": session,
+        "state": session_store.load_state(session_id),
+        "dh_export": export,
+        "dh_saved_at": dh_saved_at,
+        "reads_log": session_store.read_reads_log(session_id),
+        "reads_runs": session_store.list_reads_runs(session_id),
+    }
+
+
+@app.delete("/api/sessions/{session_id}")
+def sessions_delete(session_id: str) -> dict[str, str]:
+    _require_session(session_id)
+    session_store.delete_session(session_id)
+    return {"status": "deleted"}
+
+
+@app.put("/api/sessions/{session_id}/state")
+def sessions_save_state(session_id: str, req: SessionStateRequest) -> dict[str, Any]:
+    _require_session(session_id)
+    if req.test_env is not None:
+        session_store.set_test_env(session_id, req.test_env)
+    saved_at = session_store.save_state(session_id, req.state)
+    return {"status": "ok", "saved_at": saved_at}
+
+
+@app.post("/api/sessions/{session_id}/dh-export")
+def sessions_save_dh_export(session_id: str, req: DhExportRequest) -> dict[str, Any]:
+    _require_session(session_id)
+    saved_at = session_store.save_dh_export(session_id, req.export)
+    return {"status": "ok", "saved_at": saved_at}
+
+
+@app.get("/api/sessions/{session_id}/dh-export")
+def sessions_get_dh_export(session_id: str) -> dict[str, Any]:
+    _require_session(session_id)
+    export, saved_at = session_store.load_dh_export(session_id)
+    return {"export": export, "saved_at": saved_at}
+
+
+# ---------------------------------------------------------------------------
 # Studies
 # ---------------------------------------------------------------------------
 
@@ -277,24 +365,6 @@ def study_list(test: bool = True, status: str = "all", max_results: int = 5000) 
 # ---------------------------------------------------------------------------
 # Samples
 # ---------------------------------------------------------------------------
-
-
-@app.post("/api/sample/dh-export")
-def save_dh_export(req: DhExportRequest) -> dict[str, Any]:
-    """Persist the DataHarmonizer export draft (manual export or autosave)."""
-    _DH_DRAFT_CONTAINER_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = _DH_DRAFT_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(req.export))
-    tmp.replace(_DH_DRAFT_FILE)  # atomic on POSIX
-    return {"status": "ok", "saved_at": _iso_mtime(_DH_DRAFT_FILE)}
-
-
-@app.get("/api/sample/dh-export")
-def get_dh_export() -> dict[str, Any]:
-    """Return the most recently saved DataHarmonizer export draft, if any."""
-    if not _DH_DRAFT_FILE.is_file():
-        return {"export": None, "saved_at": None}
-    return {"export": json.loads(_DH_DRAFT_FILE.read_text()), "saved_at": _iso_mtime(_DH_DRAFT_FILE)}
 
 
 @app.post("/api/sample/prepare")
@@ -476,6 +546,12 @@ async def reads_stream(job_id: str) -> EventSourceResponse:
         reads_host_dir = _current_reads_host_dir()
         output_host_dir = _current_output_host_dir()
 
+        # Session context (optional — without it, behave as a one-off submission
+        # with timestamped aliases and no resume ledger, as before).
+        session_id = cfg.get("session_id")
+        session = session_store.get_session(session_id) if session_id else None
+        force_reupload = cfg.get("force_reupload", False)
+
         # Ensure the webin-cli output dir exists (the active reads dir is
         # read-write, whether it's the default workspace or a browsed-to host
         # directory via the now read-write /hostroot mount).
@@ -484,16 +560,91 @@ async def reads_stream(job_id: str) -> EventSourceResponse:
         except OSError:
             pass
 
+        def _emit(line: str) -> None:
+            loop.call_soon_threadsafe(queue.put_nowait, ("line", line))
+            if session is not None:
+                session_store.append_reads_log(session_id, line)
+
+        def _stable_alias(run: dict[str, Any], run_name: str) -> str | None:
+            if session is None:
+                return None  # one-off: build_manifest uses a timestamped alias
+            return session_store.session_run_alias(session["name"], run_name)
+
+        def _existing_in_ena(stable_aliases: set[str]) -> dict[str, dict[str, str]]:
+            """One Reports API lookup for all candidate aliases; tolerate failure."""
+            if session is None or force_reupload or not stable_aliases:
+                return {}
+            try:
+                return ena_service.lookup_existing_runs(creds, stable_aliases, test=cfg["test"])
+            except Exception as exc:  # noqa: BLE001
+                _emit(f"WARNING: could not check ENA for existing runs ({exc}); proceeding to submit.")
+                return {}
+
         def _produce() -> None:
             results: list[dict[str, Any]] = []
+
+            # Pre-compute stable aliases and pre-check ENA once for the batch.
+            stable_by_idx: dict[int, str | None] = {}
+            candidate_aliases: set[str] = set()
+            for idx, run in enumerate(cfg["runs"], start=1):
+                run_name = run.get("NAME", f"run{idx}")
+                stable = _stable_alias(run, run_name)
+                stable_by_idx[idx] = stable
+                run_forced = force_reupload or run.get("reupload", False)
+                if stable and not run_forced:
+                    candidate_aliases.add(stable)
+            existing = _existing_in_ena(candidate_aliases)
+
             for idx, run in enumerate(cfg["runs"], start=1):
                 name = run.get("NAME", f"run{idx}")
-                loop.call_soon_threadsafe(queue.put_nowait, ("line", f"=== [{idx}/{len(cfg['runs'])}] {name} ==="))
+                stable = stable_by_idx[idx]
+                run_forced = force_reupload or run.get("reupload", False)
+                _emit(f"=== [{idx}/{len(cfg['runs'])}] {name} ===")
+
+                # Resume short-circuits (only when we have a session + stable alias).
+                if session is not None and stable and not run_forced:
+                    ledger = session_store.get_reads_run(session_id, name)
+                    if (
+                        ledger
+                        and ledger["status"] in (session_store.STATUS_DONE, session_store.STATUS_ALREADY_IN_ENA)
+                        and (ledger.get("run_accession") or ledger.get("experiment_accession"))
+                    ):
+                        _emit(
+                            f"SKIP: already submitted in this session ({ledger.get('run_accession') or ledger.get('experiment_accession')})."
+                        )
+                        results.append(_skip_result(run, name, stable, ledger, "cached"))
+                        loop.call_soon_threadsafe(queue.put_nowait, ("result", results[-1]))
+                        continue
+                    if stable in existing:
+                        accs = existing[stable]
+                        session_store.upsert_reads_run(
+                            session_id,
+                            name,
+                            stable,
+                            session_store.STATUS_ALREADY_IN_ENA,
+                            experiment_accession=accs.get("experiment_accession") or None,
+                            run_accession=accs.get("run_accession") or None,
+                        )
+                        _emit(
+                            f"SKIP: already in ENA ({accs.get('run_accession') or accs.get('experiment_accession')}). Use Re-upload to submit again."
+                        )
+                        results.append(_skip_result(run, name, stable, accs, "already_in_ena"))
+                        loop.call_soon_threadsafe(queue.put_nowait, ("result", results[-1]))
+                        continue
+
+                # Build manifest. Stable alias by default; a fresh timestamped
+                # alias when re-uploading (ENA aliases are permanent).
+                manifest_alias: str | None = stable
+                if stable and run_forced:
+                    manifest_alias = f"{stable}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
                 try:
-                    alias, manifest_path = read_assign.build_manifest(run, reads_container_dir)
+                    alias, manifest_path = read_assign.build_manifest(run, reads_container_dir, alias=manifest_alias)
                 except ValueError as exc:
-                    loop.call_soon_threadsafe(queue.put_nowait, ("line", f"SKIP: {exc}"))
-                    results.append({"name": name, "success": False, "messages": str(exc)})
+                    _emit(f"SKIP: {exc}")
+                    results.append(
+                        {"name": name, "success": False, "skipped": True, "reason": "invalid", "messages": str(exc)}
+                    )
+                    loop.call_soon_threadsafe(queue.put_nowait, ("result", results[-1]))
                     continue
 
                 manifest_host_path = f"{reads_host_dir.rstrip('/')}/{manifest_path.name}"
@@ -513,11 +664,11 @@ async def reads_stream(job_id: str) -> EventSourceResponse:
                     while True:
                         line = next(gen)
                         lines.append(line)
-                        loop.call_soon_threadsafe(queue.put_nowait, ("line", line))
+                        _emit(line)
                 except StopIteration as si:
                     exit_code = si.value
                 except Exception as exc:  # noqa: BLE001
-                    loop.call_soon_threadsafe(queue.put_nowait, ("line", f"ERROR: {exc}"))
+                    _emit(f"ERROR: {exc}")
                     exit_code = 1
 
                 accs = read_assign.parse_accessions(lines)
@@ -528,9 +679,20 @@ async def reads_stream(job_id: str) -> EventSourceResponse:
                     "study": run.get("STUDY", ""),
                     "exit_code": exit_code,
                     "success": exit_code == 0,
+                    "skipped": False,
                     **accs,
                 }
                 results.append(result)
+                if session is not None and stable:
+                    session_store.upsert_reads_run(
+                        session_id,
+                        name,
+                        stable,
+                        session_store.STATUS_DONE if exit_code == 0 else session_store.STATUS_FAILED,
+                        experiment_accession=accs.get("experiment_accession"),
+                        run_accession=accs.get("run_accession"),
+                        submitted_alias=alias,
+                    )
                 loop.call_soon_threadsafe(queue.put_nowait, ("result", result))
 
             loop.call_soon_threadsafe(queue.put_nowait, ("__DONE__", results))

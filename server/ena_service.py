@@ -297,6 +297,47 @@ def list_records(
     return rows
 
 
+def lookup_existing_runs(
+    creds: Credentials,
+    aliases: set[str],
+    *,
+    test: bool,
+    max_results: int = 5000,
+) -> dict[str, dict[str, str]]:
+    """Find runs already in ENA by their experiment alias.
+
+    A reads submission registers an experiment (carrying the alias we control)
+    plus a run. To detect "is this run already submitted?" on a resume we look
+    up the experiment alias and map it to both accessions. Returns
+    ``{alias: {"experiment_accession": ..., "run_accession": ...}}`` for the
+    aliases that exist. Mirrors the alias-matching approach in
+    ``ena_common.find_duplicates_by_alias_title`` used for studies/samples.
+    """
+    if not aliases:
+        return {}
+    with webin_client(creds, test) as client:
+        experiments = [r.model_dump() for r in client.reports.list_experiments(max_results=max_results)]
+        runs = [r.model_dump() for r in client.reports.list_runs(max_results=max_results)]
+
+    runs_by_experiment: dict[str, str] = {}
+    for run in runs:
+        exp_acc = run.get("experiment_accession")
+        run_acc = run.get("accession")
+        if exp_acc and run_acc and exp_acc not in runs_by_experiment:
+            runs_by_experiment[exp_acc] = run_acc
+
+    found: dict[str, dict[str, str]] = {}
+    for exp in experiments:
+        alias = exp.get("alias")
+        exp_acc = exp.get("accession")
+        if alias in aliases and exp_acc:
+            found[alias] = {
+                "experiment_accession": exp_acc,
+                "run_accession": runs_by_experiment.get(exp_acc, ""),
+            }
+    return found
+
+
 # ---------------------------------------------------------------------------
 # Studies / samples submission
 # ---------------------------------------------------------------------------
