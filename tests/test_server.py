@@ -18,7 +18,7 @@ async def test_health(client):
     body = r.json()
     assert body["status"] == "ok"
     assert body["credentials_configured"] is False
-    assert "illumina_amplicon_ssu" in body["library_presets"]
+    assert "library_presets" not in body
 
 
 async def test_set_and_clear_credentials(client, monkeypatch):

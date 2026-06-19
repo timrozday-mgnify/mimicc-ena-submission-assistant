@@ -63,10 +63,12 @@ def test_credentials_indicator(page):
     assert "set" in page.inner_text("#credStatus")
 
 
-def test_library_presets_populated(page):
+def test_library_preset_ui_removed(page):
+    # Experiment metadata now comes from its own DataHarmonizer panel, not a
+    # hardcoded preset dropdown.
     page.click("nav button:has-text('Reads')")
-    options = page.eval_on_selector_all("#presetSelect option", "els => els.map(e => e.value)")
-    assert "illumina_amplicon_ssu" in options
+    assert page.query_selector("#presetSelect") is None
+    assert page.query_selector("#expDhPanel") is not None
 
 
 def test_maximize_controls_for_reads_and_dataharmonizer(page):
@@ -81,6 +83,12 @@ def test_maximize_controls_for_reads_and_dataharmonizer(page):
     assert "maximized" in page.get_attribute("#dhPanel", "class")
     page.click("#dhPanel button[aria-label='Minimize panel']")
     assert "maximized" not in page.get_attribute("#dhPanel", "class")
+
+    page.click("nav button:has-text('Reads')")
+    page.click("#expDhPanel button[aria-label='Maximize panel']")
+    assert "maximized" in page.get_attribute("#expDhPanel", "class")
+    page.click("#expDhPanel button[aria-label='Minimize panel']")
+    assert "maximized" not in page.get_attribute("#expDhPanel", "class")
 
 
 def test_reads_sample_assignment_and_row_delete(page):
@@ -104,14 +112,12 @@ def test_reads_sample_assignment_and_row_delete(page):
                 {
                     NAME: "runA", files: ["runA_R1.fastq.gz", "runA_R2.fastq.gz"], paired: true,
                     FASTQ1: "runA_R1.fastq.gz", FASTQ2: "runA_R2.fastq.gz", FASTQ: "",
-                    SAMPLE: "", STUDY: "", PLATFORM: "", INSTRUMENT: "",
-                    LIBRARY_SOURCE: "", LIBRARY_SELECTION: "", LIBRARY_STRATEGY: "", confidence: "none"
+                    SAMPLE: "", STUDY: "", confidence: "none"
                 },
                 {
                     NAME: "runB", files: ["runB.fastq.gz"], paired: false,
                     FASTQ1: "", FASTQ2: "", FASTQ: "runB.fastq.gz",
-                    SAMPLE: "", STUDY: "", PLATFORM: "", INSTRUMENT: "",
-                    LIBRARY_SOURCE: "", LIBRARY_SELECTION: "", LIBRARY_STRATEGY: "", confidence: "none"
+                    SAMPLE: "", STUDY: "", confidence: "none"
                 }
             ];
             renderRunTable();
@@ -162,3 +168,96 @@ def test_records_runs_and_experiments_views(page):
     assert "sample_accession" in headers
     assert "ERP111" in body
     assert "ERS111" in body
+
+
+def _inject_fake_experiment_dh(page, rows):
+    """Stand in for a loaded experiment DataHarmonizer grid: the real second
+    template isn't built in this (non-Docker) test environment, but the merge
+    logic only ever talks to window.dataHarmonizer.getExportJson(), so a
+    minimal fake covering that one call is enough to test it."""
+    page.evaluate(
+        """(rows) => {
+            const frame = document.getElementById('expDhFrame');
+            frame.contentWindow.dataHarmonizer = {
+                ready: true,
+                getExportJson: () => ({ Container: { MIMICC_Experiment: rows } }),
+            };
+        }""",
+        rows,
+    )
+
+
+def test_reads_submit_merges_experiment_metadata(page):
+    page.click("nav button:has-text('Reads')")
+    page.evaluate(
+        """() => {
+            RUN_ROWS = [
+                {
+                    NAME: "runA", files: ["runA_R1.fastq.gz", "runA_R2.fastq.gz"], paired: true,
+                    FASTQ1: "runA_R1.fastq.gz", FASTQ2: "runA_R2.fastq.gz", FASTQ: "",
+                    SAMPLE: "ERS111", STUDY: "ERP111", confidence: "manual"
+                }
+            ];
+            renderRunTable();
+        }"""
+    )
+    _inject_fake_experiment_dh(
+        page,
+        [
+            {
+                "Experiment name": "runA",
+                "Sample alias": "ERS111",
+                "Platform": "ILLUMINA",
+                "Instrument": "Illumina MiSeq",
+                "Library source": "METAGENOMIC",
+                "Library selection": "PCR",
+                "Library strategy": "AMPLICON",
+            }
+        ],
+    )
+
+    captured = {}
+
+    def capture(route):
+        captured["body"] = route.request.post_data_json
+        route.continue_()
+
+    page.route("**/api/reads/submit", capture)
+    page.evaluate("() => submitReads(true)")
+    page.wait_for_timeout(500)
+
+    assert captured.get("body"), "submitReads() never reached /api/reads/submit"
+    run = captured["body"]["runs"][0]
+    assert run["NAME"] == "runA"
+    assert run["SAMPLE"] == "ERS111"
+    assert run["STUDY"] == "ERP111"
+    assert run["PLATFORM"] == "ILLUMINA"
+    assert run["INSTRUMENT"] == "Illumina MiSeq"
+    assert run["LIBRARY_SOURCE"] == "METAGENOMIC"
+    assert run["LIBRARY_SELECTION"] == "PCR"
+    assert run["LIBRARY_STRATEGY"] == "AMPLICON"
+    assert run["FASTQ1"] == "runA_R1.fastq.gz" and run["FASTQ2"] == "runA_R2.fastq.gz"
+
+
+def test_reads_submit_blocks_without_matching_experiment_row(page):
+    page.click("nav button:has-text('Reads')")
+    page.evaluate(
+        """() => {
+            RUN_ROWS = [
+                { NAME: "runB", files: ["runB.fastq.gz"], paired: false,
+                  FASTQ1: "", FASTQ2: "", FASTQ: "runB.fastq.gz",
+                  SAMPLE: "ERS222", STUDY: "ERP111", confidence: "manual" }
+            ];
+            renderRunTable();
+        }"""
+    )
+    # Experiment grid is "loaded" but has no row for runB.
+    _inject_fake_experiment_dh(page, [])
+
+    submitted = {"called": False}
+    page.route("**/api/reads/submit", lambda route: submitted.update(called=True) or route.continue_())
+    page.evaluate("() => submitReads(true)")
+    page.wait_for_timeout(300)
+
+    assert submitted["called"] is False
+    assert "No experiment metadata row found" in page.inner_text("#submitReadsBanner")

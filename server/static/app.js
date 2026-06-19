@@ -192,11 +192,29 @@ async function openSession(id) {
 // interactive state (run rows, samples, prepared records) is captured as data.
 const _FIELD_IDS = [
   "studyJson", "studyHold", "sampleFilter", "sampleChecklist", "sampleHold",
-  "defaultStudy", "presetSelect", "recEntity", "recStatus", "dhExport",
+  "defaultStudy", "recEntity", "recStatus", "dhExport",
 ];
-const _CHECK_IDS = ["studyModify", "studyPublic", "sampleModify", "samplePublic"];
+const _CHECK_IDS = ["studyModify", "studyPublic", "sampleModify", "samplePublic", "forceReupload"];
 const _RESULT_IDS = ["studyOut", "prepOut", "sampleOut", "recOut", "readsResults"];
 const _LOG_IDS = ["readsLog", "recLog"];
+
+// Pristine, blank-slate values for every field/check/result/log, captured
+// once at page load (before any session is applied) — see init(). Used to
+// fully reset the form between sessions so a new (or different) session
+// never shows a previous session's leftover data.
+let INITIAL_DEFAULTS = null;
+
+function captureInitialDefaults() {
+  const fields = {};
+  _FIELD_IDS.forEach((id) => { fields[id] = $(id).value; });
+  const checks = {};
+  _CHECK_IDS.forEach((id) => { checks[id] = $(id).checked; });
+  const resultsHtml = {};
+  _RESULT_IDS.forEach((id) => { resultsHtml[id] = $(id).innerHTML; });
+  const logs = {};
+  _LOG_IDS.forEach((id) => { logs[id] = $(id).textContent; });
+  INITIAL_DEFAULTS = { fields, checks, resultsHtml, logs };
+}
 
 function collectState() {
   const fields = {};
@@ -214,9 +232,46 @@ function collectState() {
   };
 }
 
+// Reset the entire UI to a blank slate: every field/check/result/log back to
+// its pristine default, interactive state cleared, the resume ledger
+// cleared, and the DataHarmonizer grid reloaded back to its empty template.
+// Always run this before applying a session's saved state (if any) so
+// switching to — or creating — a session never leaves the previous
+// session's data on screen.
+function resetToBlank() {
+  const d = INITIAL_DEFAULTS;
+  Object.entries(d.fields).forEach(([id, v]) => { if ($(id) != null) $(id).value = v; });
+  Object.entries(d.checks).forEach(([id, v]) => { if ($(id) != null) $(id).checked = v; });
+  Object.entries(d.resultsHtml).forEach(([id, html]) => { if ($(id) != null) $(id).innerHTML = html; });
+  Object.entries(d.logs).forEach(([id, txt]) => { if ($(id) != null) $(id).textContent = txt; });
+
+  RUN_ROWS = [];
+  READ_SAMPLES = [];
+  SELECTED_SAMPLE = "";
+  READS_RUNS = {};
+  window.__prepared = undefined;
+  renderRunTable();
+  renderReadSampleList();
+  $("sampleSubmitBtn").disabled = true;
+
+  setDhSavedIndicator(null);
+  reloadDhFrame(); // back to DataHarmonizer's empty default template
+  setExpDhSavedIndicator(null);
+  reloadExpDhFrame();
+}
+
+function reloadDhFrame() {
+  const frame = $("dhFrame");
+  if (!frame) return;
+  if (dhAutosaveTimer) { clearInterval(dhAutosaveTimer); dhAutosaveTimer = null; }
+  try { frame.contentWindow.location.reload(); } catch { frame.src = frame.src; }
+}
+
 async function applyState(data) {
   suppressSave = true;
   try {
+    resetToBlank();
+
     const st = data.state || {};
     // Env
     TEST = st.test !== undefined ? st.test : SESSION.test_env;
@@ -237,13 +292,17 @@ async function applyState(data) {
     renderRunTable();
     renderReadSampleList();
     $("sampleSubmitBtn").disabled = !(window.__prepared && window.__prepared.length);
-    // DataHarmonizer grid: load saved export into the textarea + the grid.
+    // DataHarmonizer grid: load saved export into the textarea + the grid
+    // (reloadDhFrame() above already reset it to blank; this repopulates it
+    // once the reloaded iframe is ready again).
     if (data.dh_export) {
       $("dhExport").value = JSON.stringify(data.dh_export);
       setDhSavedIndicator(data.dh_saved_at);
       loadDhGridWhenReady(data.dh_export);
-    } else {
-      setDhSavedIndicator(null);
+    }
+    if (data.exp_dh_export) {
+      setExpDhSavedIndicator(data.exp_dh_saved_at);
+      loadExpDhGridWhenReady(data.exp_dh_export);
     }
   } finally {
     suppressSave = false;
@@ -317,14 +376,6 @@ async function refreshHealth() {
   if (!$("sampleFilter").value) $("sampleFilter").value = HEALTH.default_sample_filter || "";
   applyActiveReadsDir(HEALTH);
   if (!HEALTH.dh_available) { $("dhWrap").style.display = "none"; $("dhMissing").style.display = "block"; }
-  // populate library presets (rebuild so repeated calls don't duplicate options)
-  const sel = $("presetSelect");
-  const current = sel.value;
-  sel.innerHTML = '<option value="">— choose preset —</option>';
-  Object.entries(HEALTH.library_presets || {}).forEach(([k, v]) => {
-    const o = document.createElement("option"); o.value = k; o.textContent = v.label; sel.appendChild(o);
-  });
-  sel.value = current;
 }
 
 // ---------------------------------------------------------------------------
@@ -344,19 +395,23 @@ async function submitStudies() {
 }
 
 // ---------------------------------------------------------------------------
-// Samples: DataHarmonizer export integration (button + autosave)
+// DataHarmonizer export integration (sample grid: button + autosave; the
+// experiment grid below follows the same pattern, parameterized by frame id).
 // ---------------------------------------------------------------------------
 const DH_AUTOSAVE_INTERVAL_MS = 30000;
 let dhAutosaveTimer = null;
+let expDhAutosaveTimer = null;
 
-// The DataHarmonizer iframe is same-origin, so its window.dataHarmonizer hook
-// (added to the DataHarmonizer fork — see web/index.js there) is directly
-// reachable. Returns null until the grid has finished loading.
-function dhApi() {
-  const frame = $("dhFrame");
+// Each DataHarmonizer iframe is same-origin, so its window.dataHarmonizer
+// hook (added to the DataHarmonizer fork — see web/index.js there) is
+// directly reachable. Returns null until that grid has finished loading.
+function dataHarmonizerApi(frameId) {
+  const frame = $(frameId);
   const win = frame && frame.contentWindow;
   return win && win.dataHarmonizer && win.dataHarmonizer.ready ? win.dataHarmonizer : null;
 }
+function dhApi() { return dataHarmonizerApi("dhFrame"); }
+function expDhApi() { return dataHarmonizerApi("expDhFrame"); }
 
 function formatSavedAt(isoTs) {
   return isoTs ? new Date(isoTs).toLocaleTimeString() : "never";
@@ -365,11 +420,14 @@ function formatSavedAt(isoTs) {
 function setDhSavedIndicator(isoTs) {
   $("dhSavedIndicator").textContent = "Last saved: " + formatSavedAt(isoTs);
 }
+function setExpDhSavedIndicator(isoTs) {
+  $("expDhSavedIndicator").textContent = "Last saved: " + formatSavedAt(isoTs);
+}
 
 async function saveDhExport(exportJson, { silent = false } = {}) {
   if (!SESSION) { if (!silent) banner("prepBanner", false, "Open a session first."); return; }
   try {
-    const r = await api(`/api/sessions/${SESSION.id}/dh-export`, { method: "POST", body: JSON.stringify({ export: exportJson }) });
+    const r = await api(`/api/sessions/${SESSION.id}/dh-export/sample`, { method: "POST", body: JSON.stringify({ export: exportJson }) });
     $("dhExport").value = JSON.stringify(exportJson);
     setDhSavedIndicator(r.saved_at);
     scheduleSave();
@@ -412,6 +470,110 @@ function startDhAutosave() {
   }, 500);
 }
 $("dhFrame").addEventListener("load", startDhAutosave);
+
+// ---------------------------------------------------------------------------
+// Experiment metadata DataHarmonizer panel (Reads tab)
+//
+// The schema for this grid doesn't exist yet (the user authors it) — these
+// constants are the contract it must follow (LinkML slot `title:` values)
+// for the pairing-sync and submit-time merge below to find the right
+// columns. Documented in README "Experiment metadata schema".
+// ---------------------------------------------------------------------------
+const EXP_KEY_TITLE = "Experiment name";       // matches a pairing row's NAME
+const EXP_SAMPLE_TITLE = "Sample alias";       // matches a pairing row's SAMPLE
+const EXP_FIELD_TITLES = {                     // manifest field -> experiment-DH column title
+  PLATFORM: "Platform",
+  INSTRUMENT: "Instrument",
+  LIBRARY_SOURCE: "Library source",
+  LIBRARY_SELECTION: "Library selection",
+  LIBRARY_STRATEGY: "Library strategy",
+  INSERT_SIZE: "Insert size",
+  LIBRARY_NAME: "Library name",
+  DESCRIPTION: "Description",
+};
+
+let EXP_TEMPLATE_PATH = null; // "mimicc_experiment/<schema name>", or null if not built
+
+async function initExperimentDhFrame() {
+  try {
+    const registry = await (await fetch("/dh/dh-template-registry.json")).json();
+    if (registry.mimicc_experiment) {
+      EXP_TEMPLATE_PATH = `mimicc_experiment/${registry.mimicc_experiment}`;
+      $("expDhFrame").src = `/dh/?template=${EXP_TEMPLATE_PATH}`;
+      $("expDhMissing").style.display = "none";
+    } else {
+      $("expDhMissing").style.display = "block";
+    }
+  } catch {
+    $("expDhMissing").style.display = "block";
+  }
+}
+
+async function saveExpDhExport(exportJson, { silent = false } = {}) {
+  if (!SESSION) { if (!silent) banner("readsBanner", false, "Open a session first."); return; }
+  try {
+    const r = await api(`/api/sessions/${SESSION.id}/dh-export/experiment`, { method: "POST", body: JSON.stringify({ export: exportJson }) });
+    setExpDhSavedIndicator(r.saved_at);
+    scheduleSave();
+    if (!silent) banner("readsBanner", true, "Saved experiment metadata.");
+  } catch (e) {
+    if (!silent) banner("readsBanner", false, e.message);
+  }
+}
+
+function exportExpDhNow() {
+  const dh = expDhApi();
+  if (!dh) { banner("readsBanner", false, "Experiment DataHarmonizer isn't ready yet."); return; }
+  saveExpDhExport(dh.getExportJson());
+}
+
+function autosaveExpDhExport() {
+  const dh = expDhApi();
+  if (!dh || !SESSION) return;
+  saveExpDhExport(dh.getExportJson(), { silent: true });
+}
+
+function loadExpDhGridWhenReady(exportObj) {
+  if (!exportObj) return;
+  const poll = setInterval(() => {
+    const dh = expDhApi();
+    if (!dh || !dh.loadExportJson) return;
+    clearInterval(poll);
+    try { dh.loadExportJson(exportObj); } catch { /* schema mismatch — leave grid empty */ }
+  }, 500);
+  setTimeout(() => clearInterval(poll), 15000);
+}
+
+function startExpDhAutosave() {
+  const poll = setInterval(() => {
+    if (!expDhApi()) return;
+    clearInterval(poll);
+    if (expDhAutosaveTimer) clearInterval(expDhAutosaveTimer);
+    expDhAutosaveTimer = setInterval(autosaveExpDhExport, DH_AUTOSAVE_INTERVAL_MS);
+    syncPairingsToExperimentDh(); // catch up on any pairings made before this grid was ready
+  }, 500);
+}
+$("expDhFrame").addEventListener("load", startExpDhAutosave);
+
+function reloadExpDhFrame() {
+  const frame = $("expDhFrame");
+  if (!frame) return;
+  if (expDhAutosaveTimer) { clearInterval(expDhAutosaveTimer); expDhAutosaveTimer = null; }
+  if (!frame.src) return; // never pointed at a template (schema not built) — nothing to reload
+  try { frame.contentWindow.location.reload(); } catch { frame.src = frame.src; }
+}
+
+// Push each pairing row's NAME+SAMPLE into the experiment grid, touching
+// only those two columns (upsertRow) so anything already filled in for that
+// row — manually, or via the schema's own ifabsent defaults — is preserved.
+function syncPairingsToExperimentDh() {
+  const dh = expDhApi();
+  if (!dh) return;
+  RUN_ROWS.forEach((row) => {
+    if (!row.NAME) return;
+    try { dh.upsertRow(EXP_KEY_TITLE, row.NAME, { [EXP_SAMPLE_TITLE]: row.SAMPLE || "" }); } catch { /* ignore */ }
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Samples
@@ -526,9 +688,85 @@ function blankRun(group) {
     FASTQ1: group.files_by_mate?.["1"] || "", FASTQ2: group.files_by_mate?.["2"] || "",
     FASTQ: group.paired ? "" : (group.files[0] || ""),
     SAMPLE: group.suggested_sample || "", STUDY: $("defaultStudy").value || "",
-    PLATFORM: "", INSTRUMENT: "", LIBRARY_SOURCE: "", LIBRARY_SELECTION: "", LIBRARY_STRATEGY: "",
     confidence: group.confidence || "none", suggested_alias: group.suggested_alias || "",
   };
+}
+
+// ---------------------------------------------------------------------------
+// Pairing table TSV export/import
+// Columns: NAME, SAMPLE, STUDY, paired, FASTQ1, FASTQ2, FASTQ — a full
+// round-trip of a pairing row (not just the assignment decision), so import
+// works standalone without a prior Scan too.
+// ---------------------------------------------------------------------------
+const PAIRING_TSV_COLS = ["NAME", "SAMPLE", "STUDY", "paired", "FASTQ1", "FASTQ2", "FASTQ"];
+
+function exportPairingsTsv() {
+  if (!RUN_ROWS.length) { banner("readsBanner", false, "Nothing to export — scan or pair some reads first."); return; }
+  const lines = [PAIRING_TSV_COLS.join("\t")];
+  RUN_ROWS.forEach((r) => {
+    lines.push(PAIRING_TSV_COLS.map((c) => String(r[c] ?? "").replace(/\t|\n/g, " ")).join("\t"));
+  });
+  const blob = new Blob([lines.join("\n") + "\n"], { type: "text/tab-separated-values" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "read-sample-pairings.tsv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  banner("readsBanner", true, `Exported ${RUN_ROWS.length} pairing(s).`);
+}
+
+function parsePairingsTsv(text) {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
+  if (!lines.length) return [];
+  const header = lines[0].split("\t");
+  return lines.slice(1).map((line) => {
+    const cells = line.split("\t");
+    const row = {};
+    header.forEach((col, i) => { row[col] = cells[i] ?? ""; });
+    return row;
+  });
+}
+
+function importPairingsTsv() {
+  const f = $("pairingsTsvFile").files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const imported = parsePairingsTsv(reader.result);
+    let updated = 0, added = 0;
+    imported.forEach((row) => {
+      const paired = String(row.paired).toLowerCase() === "true";
+      const existing = RUN_ROWS.find((r) => r.NAME === row.NAME);
+      const files = paired
+        ? [row.FASTQ1, row.FASTQ2].filter((v) => v)
+        : [row.FASTQ].filter((v) => v);
+      if (existing) {
+        Object.assign(existing, {
+          SAMPLE: row.SAMPLE || "", STUDY: row.STUDY || "",
+          paired, FASTQ1: row.FASTQ1 || "", FASTQ2: row.FASTQ2 || "", FASTQ: row.FASTQ || "",
+          files: files.length ? files : existing.files,
+        });
+        updated++;
+      } else {
+        RUN_ROWS.push({
+          NAME: row.NAME, files, paired,
+          FASTQ1: row.FASTQ1 || "", FASTQ2: row.FASTQ2 || "", FASTQ: row.FASTQ || "",
+          SAMPLE: row.SAMPLE || "", STUDY: row.STUDY || "", confidence: "manual", suggested_alias: "",
+        });
+        added++;
+      }
+    });
+    renderRunTable();
+    renderReadSampleList();
+    syncPairingsToExperimentDh();
+    banner("readsBanner", true, `Imported ${imported.length} pairing(s) — ${updated} updated, ${added} added.`);
+    scheduleSave();
+    $("pairingsTsvFile").value = "";
+  };
+  reader.readAsText(f);
 }
 
 function sampleAccession(sample) {
@@ -609,6 +847,7 @@ async function scanReads() {
     RUN_ROWS = r.groups.map(blankRun);
     renderRunTable();
     banner("readsBanner", true, `Found ${r.count} read group(s) in ${r.host_reads_dir}.`);
+    syncPairingsToExperimentDh();
     scheduleSave();
   } catch (e) { banner("readsBanner", false, e.message); }
 }
@@ -622,6 +861,7 @@ async function suggestSamples() {
     renderRunTable();
     renderReadSampleList();
     banner("readsBanner", true, `Auto-assigned ${r.groups.filter((g) => g.suggested_sample).length}/${r.groups.length} group(s).`);
+    syncPairingsToExperimentDh();
     scheduleSave();
   } catch (e) { banner("readsBanner", false, e.message); }
 }
@@ -636,7 +876,7 @@ function runStatusCell(name) {
 }
 
 function renderRunTable() {
-  const cols = ["NAME", "files", "SAMPLE", "STUDY", "PLATFORM", "INSTRUMENT", "LIBRARY_SOURCE", "LIBRARY_SELECTION", "LIBRARY_STRATEGY"];
+  const cols = ["NAME", "files", "SAMPLE", "STUDY"];
   const head = $("runTable").querySelector("thead");
   const body = $("runTable").querySelector("tbody");
   head.innerHTML = "<tr><th></th>" + cols.map((c) => `<th>${c}</th>`).join("") + "<th>status</th><th>re-upload</th></tr>";
@@ -650,6 +890,7 @@ function renderRunTable() {
       RUN_ROWS[i].confidence = "manual";
       renderRunTable();
       renderReadSampleList();
+      syncPairingsToExperimentDh();
       scheduleSave();
     };
 
@@ -680,6 +921,7 @@ function renderRunTable() {
         inp.oninput = (e) => {
           RUN_ROWS[i][c] = e.target.value;
           if (c === "SAMPLE" || c === "FASTQ" || c === "FASTQ1" || c === "FASTQ2") renderReadSampleList();
+          if (c === "SAMPLE" || c === "NAME") syncPairingsToExperimentDh();
           scheduleSave();
         };
         td.appendChild(inp);
@@ -714,32 +956,46 @@ function renderRunTable() {
   $("readsValidateBtn").disabled = !has;
   renderReadSampleList();
 }
-function applyPreset() {
-  const p = (HEALTH.library_presets || {})[$("presetSelect").value];
-  if (!p) return;
-  RUN_ROWS.forEach((r) => { ["PLATFORM", "INSTRUMENT", "LIBRARY_SOURCE", "LIBRARY_SELECTION", "LIBRARY_STRATEGY"].forEach((k) => (r[k] = p[k])); });
-  const s = $("defaultStudy").value;
-  if (s) RUN_ROWS.forEach((r) => { if (!r.STUDY) r.STUDY = s; });
-  renderRunTable();
-  scheduleSave();
+// Look up each pairing row's experiment metadata (by EXP_KEY_TITLE = NAME) in
+// the experiment DataHarmonizer grid and merge the EXP_FIELD_TITLES-mapped
+// columns into a run dict. Throws with a clear message if the experiment
+// grid isn't ready or a row has no matching experiment entry, rather than
+// silently submitting an incomplete manifest.
+function mergeExperimentMetadata(runRows) {
+  const dh = expDhApi();
+  if (!dh) {
+    throw new Error("Experiment metadata DataHarmonizer isn't ready yet — open the Samples-like panel above and try again.");
+  }
+  const exportJson = dh.getExportJson();
+  const rows = Object.values(exportJson.Container || {})[0] || [];
+  const byName = {};
+  rows.forEach((row) => { if (row[EXP_KEY_TITLE]) byName[row[EXP_KEY_TITLE]] = row; });
+
+  return runRows.map((r) => {
+    const expRow = byName[r.NAME];
+    if (!expRow) {
+      throw new Error(`No experiment metadata row found for "${r.NAME}" — check the experiment DataHarmonizer panel above.`);
+    }
+    const o = { NAME: r.NAME, STUDY: r.STUDY, SAMPLE: r.SAMPLE, reupload: !!r.reupload };
+    Object.entries(EXP_FIELD_TITLES).forEach(([field, title]) => {
+      if (expRow[title]) o[field] = expRow[title];
+    });
+    if (r.paired) { o.FASTQ1 = r.FASTQ1; o.FASTQ2 = r.FASTQ2; } else { o.FASTQ = r.FASTQ; }
+    return o;
+  });
 }
+
 async function submitReads(doSubmit) {
   $("readsLog").textContent = "";
   $("readsResults").innerHTML = "";
   try {
-    const runs = RUN_ROWS.map((r) => {
-      const o = { NAME: r.NAME, STUDY: r.STUDY, SAMPLE: r.SAMPLE, PLATFORM: r.PLATFORM, INSTRUMENT: r.INSTRUMENT,
-        LIBRARY_SOURCE: r.LIBRARY_SOURCE, LIBRARY_SELECTION: r.LIBRARY_SELECTION, LIBRARY_STRATEGY: r.LIBRARY_STRATEGY,
-        reupload: !!r.reupload };
-      if (r.paired) { o.FASTQ1 = r.FASTQ1; o.FASTQ2 = r.FASTQ2; } else { o.FASTQ = r.FASTQ; }
-      return o;
-    });
+    const runs = mergeExperimentMetadata(RUN_ROWS);
     const { job_id } = await api("/api/reads/submit", { method: "POST", body: JSON.stringify({
       runs, test: TEST, submit: doSubmit,
       session_id: SESSION ? SESSION.id : null, force_reupload: $("forceReupload").checked,
     }) });
     streamReads(job_id);
-  } catch (e) { banner("readsBanner", false, e.message); }
+  } catch (e) { banner("submitReadsBanner", false, e.message); }
 }
 function streamReads(jobId) {
   const log = $("readsLog");
@@ -747,7 +1003,7 @@ function streamReads(jobId) {
   const es = new EventSource(`/api/reads/stream/${jobId}`);
   es.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
-    if (m.error) { banner("readsBanner", false, m.error); es.close(); return; }
+    if (m.error) { banner("submitReadsBanner", false, m.error); es.close(); return; }
     if (m.line != null) { log.textContent += m.line + "\n"; log.scrollTop = log.scrollHeight; }
     if (m.result) {
       results.push(m.result);
@@ -766,7 +1022,7 @@ function streamReads(jobId) {
     if (m.done) {
       const ok = m.results.every((r) => r.success);
       const skipped = m.results.filter((r) => r.skipped).length;
-      banner("readsBanner", ok,
+      banner("submitReadsBanner", ok,
         ok ? `Done: ${m.results.length} run(s)${skipped ? `, ${skipped} skipped (already in ENA)` : ""}.`
            : "Some runs failed — see results.");
       renderTable("readsResults", m.results);
@@ -875,6 +1131,8 @@ document.querySelector("main").addEventListener("change", (e) => {
 
 async function init() {
   await refreshHealth();
+  captureInitialDefaults();  // pristine blank-slate snapshot, used to reset between sessions
+  initExperimentDhFrame();   // point the experiment-DH iframe at its template, if built
   setSessionChip();          // no session yet -> body.no-session (blurs/locks tabs)
   openSessionModal();        // force a session pick on load
 }

@@ -7,10 +7,21 @@ RUN apt-get update && apt-get install -y python3 python3-pip && rm -rf /var/lib/
 COPY --from=dataharmonizer-src . /dh-src
 RUN pip install --no-cache-dir --break-system-packages -r /dh-src/requirements.txt
 
-# The MIMICC LinkML schema is already vendored by scripts/vendor.sh.
-COPY vendor/schemas/mimicc_sample_experiment.yaml /tmp/mimicc.yaml
+# The MIMICC LinkML schema(s) are already vendored by scripts/vendor.sh.
+# Copy the whole directory (not a single named file) so this step doesn't
+# fail if the optional experiment schema below isn't present yet.
+COPY vendor/schemas/ /tmp/schemas/
 COPY scripts/dh_build_steps.sh /tmp/dh_build_steps.sh
-RUN bash /tmp/dh_build_steps.sh /dh-src /tmp/mimicc.yaml mimicc
+# Sample+experiment template always builds. A separate experiment-only
+# template (vendor/schemas/mimicc_experiment.yaml — see README "Experiment
+# metadata schema") is optional and builds alongside it if present, so the
+# image build never breaks while that schema doesn't exist yet.
+RUN if [ -f /tmp/schemas/mimicc_experiment.yaml ]; then \
+      DH_SKIP_BUILD=1 bash /tmp/dh_build_steps.sh /dh-src /tmp/schemas/mimicc_sample_experiment.yaml mimicc && \
+      bash /tmp/dh_build_steps.sh /dh-src /tmp/schemas/mimicc_experiment.yaml mimicc_experiment; \
+    else \
+      bash /tmp/dh_build_steps.sh /dh-src /tmp/schemas/mimicc_sample_experiment.yaml mimicc; \
+    fi
 
 FROM python:3.11-slim
 
