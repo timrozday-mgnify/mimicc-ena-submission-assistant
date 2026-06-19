@@ -232,7 +232,6 @@ async def health() -> dict[str, Any]:
         "reads_dir": str(_current_reads_container_dir()),
         "host_reads_dir": _current_reads_host_dir(),
         "default_host_reads_dir": _HOST_READS_DIR,
-        "library_presets": read_assign.LIBRARY_PRESETS,
         "default_sample_filter": ena_service.DEFAULT_SAMPLE_FILTER,
     }
 
@@ -295,12 +294,15 @@ def sessions_create(req: SessionCreateRequest) -> dict[str, Any]:
 @app.get("/api/sessions/{session_id}")
 def sessions_get(session_id: str) -> dict[str, Any]:
     session = _require_session(session_id)
-    export, dh_saved_at = session_store.load_dh_export(session_id)
+    export, dh_saved_at = session_store.load_dh_export(session_id, "sample")
+    exp_export, exp_dh_saved_at = session_store.load_dh_export(session_id, "experiment")
     return {
         "session": session,
         "state": session_store.load_state(session_id),
         "dh_export": export,
         "dh_saved_at": dh_saved_at,
+        "exp_dh_export": exp_export,
+        "exp_dh_saved_at": exp_dh_saved_at,
         "reads_log": session_store.read_reads_log(session_id),
         "reads_runs": session_store.list_reads_runs(session_id),
     }
@@ -322,17 +324,23 @@ def sessions_save_state(session_id: str, req: SessionStateRequest) -> dict[str, 
     return {"status": "ok", "saved_at": saved_at}
 
 
-@app.post("/api/sessions/{session_id}/dh-export")
-def sessions_save_dh_export(session_id: str, req: DhExportRequest) -> dict[str, Any]:
+@app.post("/api/sessions/{session_id}/dh-export/{kind}")
+def sessions_save_dh_export(session_id: str, kind: str, req: DhExportRequest) -> dict[str, Any]:
     _require_session(session_id)
-    saved_at = session_store.save_dh_export(session_id, req.export)
+    try:
+        saved_at = session_store.save_dh_export(session_id, req.export, kind)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "ok", "saved_at": saved_at}
 
 
-@app.get("/api/sessions/{session_id}/dh-export")
-def sessions_get_dh_export(session_id: str) -> dict[str, Any]:
+@app.get("/api/sessions/{session_id}/dh-export/{kind}")
+def sessions_get_dh_export(session_id: str, kind: str) -> dict[str, Any]:
     _require_session(session_id)
-    export, saved_at = session_store.load_dh_export(session_id)
+    try:
+        export, saved_at = session_store.load_dh_export(session_id, kind)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"export": export, "saved_at": saved_at}
 
 

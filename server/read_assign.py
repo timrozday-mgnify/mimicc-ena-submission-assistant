@@ -42,50 +42,6 @@ _REQUIRED_FIELDS: Final = (
 )
 _OPTIONAL_FIELDS: Final = ("INSERT_SIZE", "LIBRARY_NAME", "DESCRIPTION")
 
-# MIMICC library presets (per mimicc/reference.md) for bulk-filling run metadata.
-LIBRARY_PRESETS: Final = {
-    "illumina_amplicon_ssu": {
-        "label": "Illumina SSU rRNA amplicon (MiSeq V3-V4)",
-        "PLATFORM": "ILLUMINA",
-        "INSTRUMENT": "Illumina MiSeq",
-        "LIBRARY_SOURCE": "METAGENOMIC",
-        "LIBRARY_SELECTION": "PCR",
-        "LIBRARY_STRATEGY": "AMPLICON",
-    },
-    "ont_amplicon_ssu": {
-        "label": "ONT SSU rRNA amplicon (MinION)",
-        "PLATFORM": "OXFORD_NANOPORE",
-        "INSTRUMENT": "MinION",
-        "LIBRARY_SOURCE": "METAGENOMIC",
-        "LIBRARY_SELECTION": "PCR",
-        "LIBRARY_STRATEGY": "AMPLICON",
-    },
-    "illumina_wgs": {
-        "label": "Illumina shotgun metagenomics (WGS)",
-        "PLATFORM": "ILLUMINA",
-        "INSTRUMENT": "Illumina NovaSeq 6000",
-        "LIBRARY_SOURCE": "METAGENOMIC",
-        "LIBRARY_SELECTION": "RANDOM",
-        "LIBRARY_STRATEGY": "WGS",
-    },
-    "illumina_rnaseq": {
-        "label": "Illumina metatranscriptomics (RNA-Seq)",
-        "PLATFORM": "ILLUMINA",
-        "INSTRUMENT": "Illumina NovaSeq 6000",
-        "LIBRARY_SOURCE": "METATRANSCRIPTOMIC",
-        "LIBRARY_SELECTION": "cDNA",
-        "LIBRARY_STRATEGY": "RNA-Seq",
-    },
-    "pacbio_hifi_wgs": {
-        "label": "PacBio HiFi WGS (genome closing)",
-        "PLATFORM": "PACBIO_SMRT",
-        "INSTRUMENT": "Sequel II",
-        "LIBRARY_SOURCE": "GENOMIC",
-        "LIBRARY_SELECTION": "RANDOM",
-        "LIBRARY_STRATEGY": "WGS",
-    },
-}
-
 
 # ---------------------------------------------------------------------------
 # Scanning / grouping

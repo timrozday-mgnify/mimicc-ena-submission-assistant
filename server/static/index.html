@@ -63,9 +63,9 @@
   .muted { color:var(--muted); }
   .tag { font-size:11px; padding:1px 6px; border-radius:8px; background:var(--btn2-bg); color:var(--btn2-fg); }
   .tag.high { background:#10301a; color:#5fd97a; }
-  #dhWrap { width:100%; height:850px; min-height:200px; max-height:90vh; resize:vertical; overflow:auto;
+  .dh-embed-wrap { width:100%; height:850px; min-height:200px; max-height:90vh; resize:vertical; overflow:auto;
             border:1px solid var(--line); border-radius:6px; }
-  #dhFrame { width:100%; height:100%; border:none; display:block; background:#fff; }
+  .dh-embed-frame { width:100%; height:100%; border:none; display:block; background:#fff; }
   .inline { display:flex; align-items:center; gap:6px; }
   .inline input[type=checkbox] { width:auto; }
   code { background:var(--code-bg); padding:1px 5px; border-radius:4px; }
@@ -101,7 +101,7 @@
   .session-row:last-child { border-bottom:0; }
   .session-row .meta { color:var(--muted); font-size:11px; }
   body.no-session main, body.no-session nav { filter:blur(2px); pointer-events:none; user-select:none; }
-  .panel.maximized #dhWrap { height:100%; max-height:none; resize:none; }
+  .panel.maximized .dh-embed-wrap { height:100%; max-height:none; resize:none; }
   .panel.maximized .assign-grid { --assign-table-height:100%; flex:1; min-height:0; }
   .panel.maximized .assign-grid > div, .panel.maximized .assign-grid > .scroll { min-height:0; }
   .panel.maximized .sample-list, .panel.maximized .assign-grid > .scroll { height:100%; max-height:none; }
@@ -217,7 +217,7 @@
         </div>
       </div>
       <div class="panel-body">
-        <div id="dhWrap"><iframe id="dhFrame" src="/dh/"></iframe></div>
+        <div class="dh-embed-wrap" id="dhWrap"><iframe class="dh-embed-frame" id="dhFrame" src="/dh/"></iframe></div>
         <p class="muted" id="dhMissing" style="display:none">DataHarmonizer bundle not built. Run
           <code>bash scripts/build_dh_template.sh</code>, or just export from a standalone DataHarmonizer and upload the JSON below.</p>
       </div>
@@ -280,15 +280,18 @@
     </div>
     <div class="panel maximizable" id="readsAssignPanel">
       <div class="panel-head">
-        <h2>2 · Assign samples & library metadata</h2>
+        <h2>2 · Pair samples to reads</h2>
         <button class="icon-btn maximize-toggle-btn" type="button" onclick="togglePanelMax('readsAssignPanel')" title="Maximize panel" aria-label="Maximize panel">⛶</button>
       </div>
       <div class="panel-body">
         <div class="row">
-          <div><label>Apply library preset to all rows</label>
-            <select id="presetSelect"><option value="">— choose preset —</option></select></div>
           <div><label>Default STUDY accession</label><input id="defaultStudy" placeholder="PRJEB..."></div>
-          <div style="align-self:flex-end"><button class="btn secondary" onclick="applyPreset()">Apply preset</button></div>
+        </div>
+        <div class="actions" style="margin-top:8px">
+          <button class="btn secondary" onclick="exportPairingsTsv()">Export pairings (TSV)</button>
+          <label class="btn secondary" style="display:inline-block; text-align:center; cursor:pointer">
+            Import pairings (TSV)<input type="file" id="pairingsTsvFile" accept=".tsv,.txt" onchange="importPairingsTsv()" style="display:none">
+          </label>
         </div>
         <div class="assign-grid">
           <div>
@@ -302,6 +305,27 @@
           <div class="scroll"><table id="runTable"><thead></thead><tbody></tbody></table></div>
         </div>
       </div>
+      <div class="banner" id="readsBanner"></div>
+    </div>
+    <div class="panel maximizable" id="expDhPanel">
+      <div class="panel-head">
+        <h2>3 · Enter experiment metadata (DataHarmonizer)</h2>
+        <div class="inline">
+          <button class="btn secondary" type="button" id="expDhExportBtn" onclick="exportExpDhNow()">Save metadata</button>
+          <span class="muted" id="expDhSavedIndicator">Last saved: never</span>
+          <button class="icon-btn maximize-toggle-btn" type="button" onclick="togglePanelMax('expDhPanel')" title="Maximize panel" aria-label="Maximize panel">⛶</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="dh-embed-wrap" id="expDhWrap"><iframe class="dh-embed-frame" id="expDhFrame"></iframe></div>
+        <p class="muted" id="expDhMissing" style="display:none">Experiment metadata schema not built yet — see README
+          "Experiment metadata schema". Rows are kept in sync with the pairing table above
+          (<code id="EXP_KEY_TITLE_LABEL"></code>/<code id="EXP_SAMPLE_TITLE_LABEL"></code> columns); fill in the rest
+          (platform, instrument, library source/selection/strategy, …) here before submitting.</p>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>4 · Submit reads</h2>
       <div class="actions">
         <button class="btn" id="readsSubmitBtn" onclick="submitReads(true)" disabled>Submit reads to ENA</button>
         <button class="btn secondary" id="readsValidateBtn" onclick="submitReads(false)" disabled>Validate only</button>
@@ -310,10 +334,7 @@
       <p class="muted">Runs already submitted in this session or already present in ENA are skipped automatically on
         re-submit, so an interrupted batch resumes by just clicking Submit again. Tick a row's
         <b>Re-upload</b> box (or the toggle above) to submit it again under a fresh alias.</p>
-      <div class="banner" id="readsBanner"></div>
-    </div>
-    <div class="panel">
-      <h2>3 · webin-cli log</h2>
+      <div class="banner" id="submitReadsBanner"></div>
       <div class="log" id="readsLog"></div>
       <div class="scroll" id="readsResults"></div>
     </div>

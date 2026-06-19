@@ -59,15 +59,39 @@ async def test_session_dh_export_round_trip(client):
     sid = (await client.post("/api/sessions", json={"name": "Run C"})).json()["id"]
     export = {"Container": {"MIMICC_SampleExperiments": [{"alias": "s1"}]}}
 
-    r = await client.post(f"/api/sessions/{sid}/dh-export", json={"export": export})
+    r = await client.post(f"/api/sessions/{sid}/dh-export/sample", json={"export": export})
     assert r.status_code == 200 and r.json()["saved_at"]
 
-    got = (await client.get(f"/api/sessions/{sid}/dh-export")).json()
+    got = (await client.get(f"/api/sessions/{sid}/dh-export/sample")).json()
     assert got["export"] == export
 
     # Also surfaced by the aggregate session GET (used to rehydrate the grid).
     agg = (await client.get(f"/api/sessions/{sid}")).json()
     assert agg["dh_export"] == export
+
+
+async def test_session_dh_export_kinds_are_independent(client):
+    sid = (await client.post("/api/sessions", json={"name": "Run C2"})).json()["id"]
+    sample_export = {"Container": {"MIMICC_SampleExperiments": [{"alias": "s1"}]}}
+    exp_export = {"Container": {"MIMICC_Experiment": [{"Experiment name": "run1"}]}}
+
+    await client.post(f"/api/sessions/{sid}/dh-export/sample", json={"export": sample_export})
+    await client.post(f"/api/sessions/{sid}/dh-export/experiment", json={"export": exp_export})
+
+    sample_got = (await client.get(f"/api/sessions/{sid}/dh-export/sample")).json()
+    exp_got = (await client.get(f"/api/sessions/{sid}/dh-export/experiment")).json()
+    assert sample_got["export"] == sample_export
+    assert exp_got["export"] == exp_export
+
+    agg = (await client.get(f"/api/sessions/{sid}")).json()
+    assert agg["dh_export"] == sample_export
+    assert agg["exp_dh_export"] == exp_export
+
+
+async def test_session_dh_export_invalid_kind(client):
+    sid = (await client.post("/api/sessions", json={"name": "Run C3"})).json()["id"]
+    r = await client.post(f"/api/sessions/{sid}/dh-export/bogus", json={"export": {}})
+    assert r.status_code == 400
 
 
 async def test_session_delete(client):

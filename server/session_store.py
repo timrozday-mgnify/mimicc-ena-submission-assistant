@@ -88,8 +88,16 @@ def state_path(session_id: str) -> pathlib.Path:
     return session_dir(session_id) / "state.json"
 
 
-def dh_export_path(session_id: str) -> pathlib.Path:
-    return session_dir(session_id) / "dh_export.json"
+_VALID_DH_KINDS = ("sample", "experiment")
+
+
+def dh_export_path(session_id: str, kind: str = "sample") -> pathlib.Path:
+    if kind not in _VALID_DH_KINDS:
+        raise ValueError(f"Unknown DataHarmonizer export kind {kind!r}; expected one of {_VALID_DH_KINDS}")
+    # "sample" keeps the original filename for backwards compatibility with
+    # sessions saved before the "experiment" kind existed.
+    suffix = "" if kind == "sample" else f"_{kind}"
+    return session_dir(session_id) / f"dh_export{suffix}.json"
 
 
 def reads_log_path(session_id: str) -> pathlib.Path:
@@ -118,14 +126,15 @@ def load_state(session_id: str) -> Any | None:
     return json.loads(p.read_text()) if p.is_file() else None
 
 
-def save_dh_export(session_id: str, export: Any) -> str:
-    _atomic_write_json(dh_export_path(session_id), export)
+def save_dh_export(session_id: str, export: Any, kind: str = "sample") -> str:
+    p = dh_export_path(session_id, kind)
+    _atomic_write_json(p, export)
     touch_session(session_id)
-    return _iso_mtime(dh_export_path(session_id)) or _now()
+    return _iso_mtime(p) or _now()
 
 
-def load_dh_export(session_id: str) -> tuple[Any | None, str | None]:
-    p = dh_export_path(session_id)
+def load_dh_export(session_id: str, kind: str = "sample") -> tuple[Any | None, str | None]:
+    p = dh_export_path(session_id, kind)
     if not p.is_file():
         return None, None
     return json.loads(p.read_text()), _iso_mtime(p)

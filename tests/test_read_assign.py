@@ -105,9 +105,3 @@ def test_parse_accessions():
         "experiment_accession": "ERX123",
         "run_accession": "ERR456",
     }
-
-
-def test_library_presets_complete():
-    for preset in read_assign.LIBRARY_PRESETS.values():
-        for field in ("PLATFORM", "INSTRUMENT", "LIBRARY_SOURCE", "LIBRARY_SELECTION", "LIBRARY_STRATEGY"):
-            assert preset.get(field)
