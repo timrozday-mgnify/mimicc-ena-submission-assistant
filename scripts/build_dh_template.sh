@@ -17,11 +17,21 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATAHARMONIZER="${DATAHARMONIZER:-$ROOT/../DataHarmonizer}"
 ENA_DH="${ENA_DH:-$ROOT/../ena-submission-dataharmonizer}"
-SCHEMA="${ENA_DH_SCHEMA:-$ENA_DH/schemas/mimicc_sample_experiment.yaml}"
+SCHEMA="${ENA_DH_SCHEMA:-$ENA_DH/schemas/mimicc_sample.yaml}"
+EXPERIMENT_SCHEMA="${ENA_DH_EXPERIMENT_SCHEMA:-$ENA_DH/schemas/mimicc_experiment.yaml}"
 TEMPLATE="mimicc"
 DEST="$ROOT/server/static/dh"
 
-bash "$ROOT/scripts/dh_build_steps.sh" "$DATAHARMONIZER" "$SCHEMA" "$TEMPLATE"
+# Two separate templates — sample (mimicc_sample.yaml) and experiment
+# (mimicc_experiment.yaml) — built into the same bundle, mirroring the
+# Dockerfile's dh-builder stage. The experiment template is optional so this
+# script doesn't break if that schema file is ever absent.
+if [ -f "$EXPERIMENT_SCHEMA" ]; then
+  DH_SKIP_BUILD=1 bash "$ROOT/scripts/dh_build_steps.sh" "$DATAHARMONIZER" "$SCHEMA" "$TEMPLATE"
+  bash "$ROOT/scripts/dh_build_steps.sh" "$DATAHARMONIZER" "$EXPERIMENT_SCHEMA" mimicc_experiment
+else
+  bash "$ROOT/scripts/dh_build_steps.sh" "$DATAHARMONIZER" "$SCHEMA" "$TEMPLATE"
+fi
 
 echo ">> Copying bundle into $DEST"
 rm -rf "$DEST"

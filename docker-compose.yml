@@ -8,6 +8,8 @@ services:
         # (server/static/dh/) during the image build. Override if your
         # checkout lives somewhere other than the default sibling path.
         dataharmonizer-src: ${DATAHARMONIZER_DIR:-../DataHarmonizer}
+        # Shared LinkML utility package used by the server runtime.
+        linkml-lib: ${LINKML_LIB_DIR:-../linkml-lib}
     container_name: mimicc-ena-submission-assistant
     ports:
       - "127.0.0.1:${MIMICC_PORT:-9000}:9000"
