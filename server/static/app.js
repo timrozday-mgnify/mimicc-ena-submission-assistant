@@ -494,17 +494,27 @@ const EXP_FIELD_TITLES = {                     // manifest field -> experiment-D
 
 let EXP_TEMPLATE_PATH = null; // "mimicc_experiment/<schema name>", or null if not built
 
-async function initExperimentDhFrame() {
+// Point both DH iframes at an explicit `?template=<folder>/<schema name>`,
+// looked up from the build's own registry rather than hardcoded — and
+// required even for the sample grid (the default, query-param-less `/dh/`
+// only works when exactly one template is registered; with two or more, the
+// Toolbar's own Template <select> can end up loading a different one than
+// AppContext's own startup reload did, leaving window.dataHarmonizer
+// pointing at no current grid).
+async function initDhFrames() {
+  let registry = {};
   try {
-    const registry = await (await fetch("/dh/dh-template-registry.json")).json();
-    if (registry.mimicc_experiment) {
-      EXP_TEMPLATE_PATH = `mimicc_experiment/${registry.mimicc_experiment}`;
-      $("expDhFrame").src = `/dh/?template=${EXP_TEMPLATE_PATH}`;
-      $("expDhMissing").style.display = "none";
-    } else {
-      $("expDhMissing").style.display = "block";
-    }
-  } catch {
+    registry = await (await fetch("/dh/dh-template-registry.json")).json();
+  } catch { /* dh-default not built at all — fall through, both show "missing" */ }
+
+  if (registry.mimicc) {
+    $("dhFrame").src = `/dh/?template=mimicc/${registry.mimicc}`;
+  }
+  if (registry.mimicc_experiment) {
+    EXP_TEMPLATE_PATH = `mimicc_experiment/${registry.mimicc_experiment}`;
+    $("expDhFrame").src = `/dh/?template=${EXP_TEMPLATE_PATH}`;
+    $("expDhMissing").style.display = "none";
+  } else {
     $("expDhMissing").style.display = "block";
   }
 }
@@ -1132,7 +1142,7 @@ document.querySelector("main").addEventListener("change", (e) => {
 async function init() {
   await refreshHealth();
   captureInitialDefaults();  // pristine blank-slate snapshot, used to reset between sessions
-  initExperimentDhFrame();   // point the experiment-DH iframe at its template, if built
+  initDhFrames();            // point both DH iframes at explicit ?template= paths
   setSessionChip();          // no session yet -> body.no-session (blurs/locks tabs)
   openSessionModal();        // force a session pick on load
 }

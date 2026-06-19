@@ -9,18 +9,18 @@ RUN pip install --no-cache-dir --break-system-packages -r /dh-src/requirements.t
 
 # The MIMICC LinkML schema(s) are already vendored by scripts/vendor.sh.
 # Copy the whole directory (not a single named file) so this step doesn't
-# fail if the optional experiment schema below isn't present yet.
+# fail if mimicc_experiment.yaml is ever absent (e.g. an older vendor.sh run).
 COPY vendor/schemas/ /tmp/schemas/
 COPY scripts/dh_build_steps.sh /tmp/dh_build_steps.sh
-# Sample+experiment template always builds. A separate experiment-only
-# template (vendor/schemas/mimicc_experiment.yaml — see README "Experiment
-# metadata schema") is optional and builds alongside it if present, so the
-# image build never breaks while that schema doesn't exist yet.
+# Sample (mimicc_sample.yaml) and experiment (mimicc_experiment.yaml) are two
+# separate templates — see README "Experiment metadata schema". The
+# experiment template builds alongside the sample one if its schema file is
+# present, so the image build never breaks if it's ever missing.
 RUN if [ -f /tmp/schemas/mimicc_experiment.yaml ]; then \
-      DH_SKIP_BUILD=1 bash /tmp/dh_build_steps.sh /dh-src /tmp/schemas/mimicc_sample_experiment.yaml mimicc && \
+      DH_SKIP_BUILD=1 bash /tmp/dh_build_steps.sh /dh-src /tmp/schemas/mimicc_sample.yaml mimicc && \
       bash /tmp/dh_build_steps.sh /dh-src /tmp/schemas/mimicc_experiment.yaml mimicc_experiment; \
     else \
-      bash /tmp/dh_build_steps.sh /dh-src /tmp/schemas/mimicc_sample_experiment.yaml mimicc; \
+      bash /tmp/dh_build_steps.sh /dh-src /tmp/schemas/mimicc_sample.yaml mimicc; \
     fi
 
 FROM python:3.11-slim
@@ -31,8 +31,9 @@ RUN apt-get update && apt-get install -y docker.io curl && rm -rf /var/lib/apt/l
 
 WORKDIR /app
 
+COPY --from=linkml-lib . /linkml-lib
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir /linkml-lib && pip install --no-cache-dir -r requirements.txt
 
 # Vendored sibling code (populated by scripts/vendor.sh before building).
 COPY vendor/ vendor/
@@ -46,7 +47,7 @@ COPY server/ server/
 # defaults on first run by scripts/server_entrypoint.sh, so an on-demand
 # rebuild (dh_builder_lib) can update them without an image rebuild.
 COPY --from=dh-builder /dh-src/web/dist/. dh-default/
-COPY vendor/schemas/mimicc_sample_experiment.yaml dh-schema-default/mimicc.yaml
+COPY vendor/schemas/mimicc_sample.yaml dh-schema-default/mimicc.yaml
 COPY scripts/server_entrypoint.sh /usr/local/bin/server_entrypoint.sh
 RUN chmod +x /usr/local/bin/server_entrypoint.sh
 

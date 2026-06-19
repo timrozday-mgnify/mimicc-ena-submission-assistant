@@ -5,16 +5,19 @@
 # Usage:
 #   ENA_API_CLIENT=../ena-api-client \
 #   ENA_DH=../ena-submission-dataharmonizer \
+#   LINKML_LIB=../linkml-lib \
 #   bash scripts/vendor.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENA_API_CLIENT="${ENA_API_CLIENT:-$ROOT/../ena-api-client}"
 ENA_DH="${ENA_DH:-$ROOT/../ena-submission-dataharmonizer}"
+LINKML_LIB="${LINKML_LIB:-$ROOT/../linkml-lib}"
 VENDOR="$ROOT/vendor"
 
 echo "ena-api-client: $ENA_API_CLIENT"
 echo "ena-dh:         $ENA_DH"
+echo "linkml-lib:     $LINKML_LIB"
 echo "vendor:         $VENDOR"
 
 rm -rf "$VENDOR"
@@ -23,12 +26,15 @@ mkdir -p "$VENDOR/scripts" "$VENDOR/assets"
 # ena_api package (added to sys.path => `import ena_api`)
 cp -R "$ENA_API_CLIENT/ena_api" "$VENDOR/ena_api"
 
-# ena-dh submission scripts + linkml_lib (added to sys.path => `import ena_common`, etc.)
+# ena-dh submission scripts (added to sys.path => `import ena_common`, etc.)
 #   note: submit_reads.py is intentionally NOT copied — reads go via webin_cli_lib.
 for f in ena_common.py submit_sample.py submit_study.py prepare_dh_output.py; do
     cp "$ENA_DH/scripts/$f" "$VENDOR/scripts/$f"
 done
-cp -R "$ENA_DH/scripts/linkml_lib" "$VENDOR/scripts/linkml_lib"
+
+# Shared LinkML utilities. This intentionally comes from the standalone
+# linkml-lib package, not from ena-submission-dataharmonizer/scripts/linkml_lib.
+cp -R "$LINKML_LIB/src/linkml_lib" "$VENDOR/linkml_lib"
 
 # Schemas + ENA XSDs used for sample/study build + validation
 cp -R "$ENA_DH/schemas" "$VENDOR/schemas"

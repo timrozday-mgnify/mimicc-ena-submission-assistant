@@ -52,13 +52,16 @@ schema editor.
 
 ## Install & run
 
-Prerequisites: Docker Desktop, and a `DataHarmonizer` checkout (default sibling
-path `../DataHarmonizer`, override with `DATAHARMONIZER_DIR` in `.env`). Node/Yarn
-are **not** required on the host — the Docker build compiles the embedded
-DataHarmonizer bundle itself, in a dedicated build stage.
+Prerequisites: Docker Desktop, a `DataHarmonizer` checkout (default sibling
+path `../DataHarmonizer`, override with `DATAHARMONIZER_DIR` in `.env`), and
+the shared `linkml-lib` checkout (default sibling path `../linkml-lib`, override
+with `LINKML_LIB_DIR` in `.env`). Node/Yarn are **not** required on the host —
+the Docker build compiles the embedded DataHarmonizer bundle itself, in a
+dedicated build stage.
 
 ```bash
-# 1. Vendor the sibling code into ./vendor (ena-api-client + ena-dh scripts/schemas/XSDs)
+# 1. Vendor sibling code into ./vendor
+#    (ena-api-client, ena-dh scripts/schemas/XSDs, and standalone linkml-lib)
 bash scripts/vendor.sh
 
 # 2. Put FASTQ/BAM/CRAM files in the reads workspace (default ~/.mimicc-ena/reads),
@@ -86,7 +89,9 @@ Stop with `docker compose down`, or the in-app shutdown endpoint.
 
 The Samples tab embeds a built DataHarmonizer bundle (`server/static/dh/`) with
 the MIMICC template, carrying the LinkML schema vendored at
-`vendor/schemas/mimicc_sample_experiment.yaml`. `docker compose build` produces
+`vendor/schemas/mimicc_sample.yaml` (filtered from `mimicc_sample_experiment.yaml`
+down to sample-scoped slots — see "Experiment metadata schema" below for the
+sibling experiment template and the filter mechanism). `docker compose build` produces
 this automatically via a `dh-builder` stage in the `Dockerfile` (Node + Yarn +
 the `DataHarmonizer` checkout supplied as the `dataharmonizer-src` build
 context — see `DATAHARMONIZER_DIR` in `.env.example`). If that checkout isn't
@@ -140,23 +145,49 @@ checkout used as the `dataharmonizer-src` build context:
 Without this patch, the export button shows "isn't ready yet" and the Samples tab falls back to the
 manual upload/paste flow; the experiment-metadata panel (below) similarly can't sync or merge.
 
-### Experiment metadata schema
+### Sample and experiment metadata schemas
 
 Sample metadata and experiment metadata (platform, instrument, library source/selection/strategy,
-…) are entered through **two separate** DataHarmonizer templates rather than one combined schema:
-sample metadata stays in `vendor/schemas/mimicc_sample_experiment.yaml` (Samples tab); experiment
-metadata gets its own template, sourced from an **optional**, separately-authored
-`mimicc_experiment.yaml`, shown in a second DataHarmonizer panel on the Reads tab.
+…) are entered through **two separate** DataHarmonizer templates, both filtered out of the original
+combined schema (`ena-submission-dataharmonizer/schemas/mimicc_sample_experiment.yaml`) via
+the standalone `linkml-lib` package's `linkml_lib.transform.filter`:
 
-- **File location**: add `ena-submission-dataharmonizer/schemas/mimicc_experiment.yaml` (picked up
-  automatically by `scripts/vendor.sh`, which already copies the whole `schemas/` directory) and
-  rebuild. **This file doesn't exist yet** — until you add it, the build produces only the sample
-  template (exactly as before this feature existed; the experiment panel shows "schema not built
-  yet").
-- **Column-title contract**: the app can't introspect a schema that doesn't exist yet, so it syncs
-  and merges by fixed, expected LinkML `title:` values (see `EXP_KEY_TITLE`/`EXP_SAMPLE_TITLE`/
-  `EXP_FIELD_TITLES` near the top of the "Experiment metadata DataHarmonizer panel" section in
-  `server/static/app.js`) — your schema's slots must use these exact titles:
+- **`mimicc_sample.yaml`** (Samples tab) — every slot whose `annotations.source` is one of
+  `ERC000025`, `MIMICC.custom`, `ENA.sample`, `ENA.project` (44 slots). Generated with:
+  ```python
+  from linkml_lib import io, schema, transform
+  from linkml_lib.dh_data import _select_slot_names
+
+  s = io.load_yaml("schemas/mimicc_sample_experiment.yaml")
+  rows = schema.slot_meta(s)
+  names = _select_slot_names(rows, "source IN ('ERC000025', 'MIMICC.custom', 'ENA.sample', 'ENA.project')")
+  ordered = [r["name"] for r in rows if r["name"] in names]
+  io.write_yaml(transform.filter(s, include=ordered), "schemas/mimicc_sample.yaml")
+  ```
+  This reuses the same SQL-WHERE-on-slot-metadata mechanism `dh_data.filter_columns` already uses
+  to filter exported *data* by source, applied here to the *schema*'s own slot list instead — and is
+  exactly `ena_service.DEFAULT_SAMPLE_FILTER`, the WHERE the Prepare step already applies when
+  going from a DataHarmonizer export to ENA submission fields, so the schema and that filter now
+  describe the same set of fields by construction.
+- **`mimicc_experiment.yaml`** (Reads tab, second panel) — the complementary 12
+  `SRA.experiment`/`SRA.study`-scoped slots, plus two new slots (`PLATFORM`/`INSTRUMENT`, absent from
+  the source schema — authored from scratch with standard ENA/SRA controlled-vocabulary enums) and
+  two join-key slots (`experiment_name`/`sample_alias`) that don't exist in the sample/experiment
+  source schema at all. `STUDY_REF`, `CENTER_NAME`, `LIBRARY_LAYOUT` and `TITLE` were dropped (the
+  first three aren't needed by webin-cli or are redundant with the pairing table; `TITLE`'s original
+  `ifabsent` formula referenced sample-only slots not present in this schema).
+
+Both vendored at `vendor/schemas/` by `scripts/vendor.sh` (copies the whole `schemas/` directory —
+no per-file changes needed there). The experiment template build step still tolerates
+`mimicc_experiment.yaml` being absent (gracefully falling back to sample-template-only), even though
+in practice both files now exist permanently.
+
+- **Column-title contract** (experiment schema only — the sample schema needs no equivalent contract
+  since the Samples tab just renders whatever the schema defines, with no app-side sync/merge logic
+  reading specific column titles): the app syncs/merges by fixed, expected LinkML `title:` values
+  (see `EXP_KEY_TITLE`/`EXP_SAMPLE_TITLE`/`EXP_FIELD_TITLES` near the top of the "Experiment metadata
+  DataHarmonizer panel" section in `server/static/app.js`) — your schema's slots must use these exact
+  titles:
 
   | Manifest field | Required `title:` |
   |---|---|
@@ -233,11 +264,12 @@ button). Everything about a session is saved to disk and restored when you reope
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt          # full stack (incl. linkml) for all features
+pip install -e ../linkml-lib             # shared LinkML helpers
 pip install pytest pytest-asyncio anyio playwright
 bash scripts/vendor.sh                    # so ena_api / ena_common etc. import
 
 # Run the server locally (reads submission needs Docker; other tabs work without it)
-PYTHONPATH=server:. uvicorn main:app --reload --port 9000 --app-dir server
+PYTHONPATH=server:.:../linkml-lib/src uvicorn main:app --reload --port 9000 --app-dir server
 ```
 
 ### Tests
@@ -263,12 +295,12 @@ server/
   session_store.py     submission sessions: SQLite registry + reads ledger + per-session files
   webin_runner.py      Docker-in-Docker adapter (from webin-cli-browser-assistant)
   dh_builder_runner.py Docker-in-Docker adapter for the DH bundle rebuild
-  _bootstrap.py        puts vendored sibling code on sys.path
+  _bootstrap.py        puts vendored sibling code and linkml-lib on sys.path
   static/              single-page UI (index.html, app.js) + DH bundle (dh/, bind-mounted)
 webin_cli_lib/     webin-cli Docker executor (from webin-cli-browser-assistant)
 dh_builder_lib/    mimicc-dh-builder Docker executor (mirrors webin_cli_lib)
 scripts/
-  vendor.sh              copy sibling repos into ./vendor
+  vendor.sh              copy sibling repos and standalone linkml-lib into ./vendor
   build_dh_template.sh   build the embedded DataHarmonizer bundle (local dev)
   dh_build_steps.sh       shared DH build steps (used by the above + both Dockerfiles)
   dh_builder_entrypoint.sh entrypoint for the mimicc-dh-builder image
