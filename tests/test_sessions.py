@@ -1,21 +1,14 @@
-"""Submission-session persistence + reads-resume tests (in-process, no Docker)."""
+"""Submission-session persistence + reads-resume tests (in-process, no Docker).
+
+Session isolation between tests is handled by the ``clean_state`` autouse
+fixture in conftest (it wipes per-user rows from the throwaway test DB).
+"""
 
 from __future__ import annotations
 
-import json
-
 import conftest
 import main as _main
-import pytest
 import session_store
-
-
-@pytest.fixture(autouse=True)
-def _isolate_sessions(tmp_path, monkeypatch):
-    """Point the session store at a throwaway dir + DB for every test."""
-    monkeypatch.setattr(session_store, "_SESSIONS_DIR", tmp_path)
-    monkeypatch.setattr(session_store, "_DB_PATH", tmp_path / "sessions.db")
-
 
 # ---------------------------------------------------------------------------
 # Session registry + state round-trip
@@ -123,30 +116,32 @@ _RUN = {
 }
 
 
-async def _stream(client, job_id):
-    events = []
-    async with client.stream("GET", f"/api/reads/stream/{job_id}") as resp:
-        async for line in resp.aiter_lines():
-            if line.startswith("data:"):
-                events.append(json.loads(line[5:].strip()))
-    return events
-
-
-async def test_reads_records_ledger_and_uses_stable_alias(client, with_creds, tmp_path, monkeypatch):
-    monkeypatch.setattr(_main, "_READS_CONTAINER_DIR", tmp_path)
-    monkeypatch.setattr(_main.webin_runner, "iter_webin_cli_logs", lambda **kw: conftest.mock_logs_success(**kw))
+async def test_reads_plan_uses_stable_alias_and_result_records_ledger(client, with_creds, monkeypatch):
     # No existing runs in ENA.
     monkeypatch.setattr(_main.ena_service, "lookup_existing_runs", lambda *a, **k: {})
 
     sid = (await client.post("/api/sessions", json={"name": "ResumeRun"})).json()["id"]
-    job = (await client.post("/api/reads/submit", json={"runs": [_RUN], "session_id": sid})).json()
-    events = await _stream(client, job["job_id"])
+    plan = (await client.post("/api/reads/plan", json={"runs": [_RUN], "session_id": sid})).json()["plan"]
+    entry = plan[0]
+    assert entry["action"] == "submit"
+    # Stable, session-scoped alias (no timestamp suffix).
+    assert entry["alias"] == "ResumeRun_MIMICC_A_1"
 
-    done = [e for e in events if e.get("done")][0]
-    assert done["results"][0]["success"] is True
-    assert done["results"][0]["skipped"] is False
-    # Stable, session-scoped alias was used (no timestamp suffix).
-    assert done["results"][0]["alias"] == "ResumeRun_MIMICC_A_1"
+    # Browser relays the helper's webin-cli outcome back to the server.
+    res = (
+        await client.post(
+            "/api/reads/result",
+            json={
+                "session_id": sid,
+                "name": "MIMICC_A_1",
+                "alias": entry["alias"],
+                "stable_alias": entry["stable_alias"],
+                "exit_code": 0,
+                "log": conftest.MOCK_READS_LOG,
+            },
+        )
+    ).json()["result"]
+    assert res["success"] is True
 
     # Ledger row recorded for the next resume.
     runs = session_store.list_reads_runs(sid)
@@ -154,13 +149,7 @@ async def test_reads_records_ledger_and_uses_stable_alias(client, with_creds, tm
     assert runs[0]["run_accession"] == "ERR9000001"
 
 
-async def test_reads_skips_already_in_ena(client, with_creds, tmp_path, monkeypatch):
-    monkeypatch.setattr(_main, "_READS_CONTAINER_DIR", tmp_path)
-
-    def _boom(**kw):  # must NOT be called for a skipped run
-        raise AssertionError("webin-cli should not run for an already-submitted run")
-
-    monkeypatch.setattr(_main.webin_runner, "iter_webin_cli_logs", _boom)
+async def test_reads_plan_skips_already_in_ena(client, with_creds, monkeypatch):
     monkeypatch.setattr(
         _main.ena_service,
         "lookup_existing_runs",
@@ -168,19 +157,34 @@ async def test_reads_skips_already_in_ena(client, with_creds, tmp_path, monkeypa
     )
 
     sid = (await client.post("/api/sessions", json={"name": "ResumeRun"})).json()["id"]
-    job = (await client.post("/api/reads/submit", json={"runs": [_RUN], "session_id": sid})).json()
-    events = await _stream(client, job["job_id"])
+    plan = (await client.post("/api/reads/plan", json={"runs": [_RUN], "session_id": sid})).json()["plan"]
 
-    res = [e for e in events if e.get("done")][0]["results"][0]
-    assert res["skipped"] is True
-    assert res["reason"] == "already_in_ena"
-    assert res["run_accession"] == "ERR5"
+    entry = plan[0]
+    assert entry["action"] == "skip"
+    assert entry["reason"] == "already_in_ena"
+    assert entry["run_accession"] == "ERR5"
+    # Recorded in the ledger so a later resume short-circuits.
     assert session_store.get_reads_run(sid, "MIMICC_A_1")["status"] == "already_in_ena"
 
 
-async def test_reads_force_reupload_runs_with_fresh_alias(client, with_creds, tmp_path, monkeypatch):
-    monkeypatch.setattr(_main, "_READS_CONTAINER_DIR", tmp_path)
-    monkeypatch.setattr(_main.webin_runner, "iter_webin_cli_logs", lambda **kw: conftest.mock_logs_success(**kw))
+async def test_reads_plan_resumes_from_ledger(client, with_creds, monkeypatch):
+    """A run already DONE in this session's ledger is skipped without an ENA lookup."""
+
+    def _boom(*a, **k):  # must NOT be called when the ledger already has the run
+        raise AssertionError("ENA lookup should not run for a ledger-cached run")
+
+    sid = (await client.post("/api/sessions", json={"name": "ResumeRun"})).json()["id"]
+    session_store.upsert_reads_run(
+        sid, "MIMICC_A_1", "ResumeRun_MIMICC_A_1", session_store.STATUS_DONE, run_accession="ERR9"
+    )
+    monkeypatch.setattr(_main.ena_service, "lookup_existing_runs", _boom)
+
+    plan = (await client.post("/api/reads/plan", json={"runs": [_RUN], "session_id": sid})).json()["plan"]
+    assert plan[0]["action"] == "skip"
+    assert plan[0]["reason"] == "cached"
+
+
+async def test_reads_plan_force_reupload_uses_fresh_alias(client, with_creds, monkeypatch):
     # Even though it's "already in ENA", force_reupload must bypass the skip.
     monkeypatch.setattr(
         _main.ena_service,
@@ -189,16 +193,15 @@ async def test_reads_force_reupload_runs_with_fresh_alias(client, with_creds, tm
     )
 
     sid = (await client.post("/api/sessions", json={"name": "ResumeRun"})).json()["id"]
-    job = (
+    plan = (
         await client.post(
-            "/api/reads/submit",
+            "/api/reads/plan",
             json={"runs": [_RUN], "session_id": sid, "force_reupload": True},
         )
-    ).json()
-    events = await _stream(client, job["job_id"])
+    ).json()["plan"]
 
-    res = [e for e in events if e.get("done")][0]["results"][0]
-    assert res["skipped"] is False
+    entry = plan[0]
+    assert entry["action"] == "submit"
     # Fresh alias = stable alias + timestamp suffix (so ENA won't reject it).
-    assert res["alias"].startswith("ResumeRun_MIMICC_A_1_")
-    assert res["alias"] != "ResumeRun_MIMICC_A_1"
+    assert entry["alias"].startswith("ResumeRun_MIMICC_A_1_")
+    assert entry["alias"] != "ResumeRun_MIMICC_A_1"

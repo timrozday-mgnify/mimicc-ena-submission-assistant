@@ -17,4 +17,28 @@ if [ -f /app/dh-schema-default/mimicc.yaml ] && [ -z "$(ls -A /dh-schema 2>/dev/
   cp /app/dh-schema-default/mimicc.yaml /dh-schema/mimicc.yaml
 fi
 
+# Apply database migrations before serving. When DATABASE_URL points at Postgres,
+# wait for it to accept connections first (the db service may still be starting).
+if [ -n "${DATABASE_URL:-}" ]; then
+  echo "Waiting for the database…"
+  for _ in $(seq 1 60); do
+    if python -c "
+import os, sys
+from urllib.parse import urlparse
+import psycopg
+u = urlparse(os.environ['DATABASE_URL'])
+try:
+    psycopg.connect(host=u.hostname, port=u.port or 5432, user=u.username,
+                    password=u.password, dbname=u.path.lstrip('/'), connect_timeout=2).close()
+except Exception:
+    sys.exit(1)
+" 2>/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+fi
+echo "Applying database migrations…"
+python /app/manage.py migrate --noinput
+
 exec "$@"

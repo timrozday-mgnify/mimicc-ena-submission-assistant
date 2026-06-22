@@ -11,6 +11,10 @@ server/static/dh/
 # bind mount instead.
 .local/
 
+# SQLite fallback DB (used when DATABASE_URL is unset — tests + lightweight local).
+.data/
+*.sqlite3
+
 # Test/tooling artifacts
 .pytest_cache/
 .ruff_cache/

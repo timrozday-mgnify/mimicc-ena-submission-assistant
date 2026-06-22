@@ -220,13 +220,18 @@ def test_reads_submit_merges_experiment_metadata(page):
 
     def capture(route):
         captured["body"] = route.request.post_data_json
-        route.continue_()
+        # Respond with an empty plan so submitReads() finishes without needing
+        # the local helper (which isn't running in this test).
+        route.fulfill(status=200, content_type="application/json", body='{"plan": [], "warnings": []}')
 
-    page.route("**/api/reads/submit", capture)
+    # Pretend the local upload helper is running + a reads dir is set, so the
+    # flow proceeds to request the plan from the server.
+    page.evaluate("() => { HELPER_OK = true; document.getElementById('readsLocalDir').value = '/tmp/reads'; }")
+    page.route("**/api/reads/plan", capture)
     page.evaluate("() => submitReads(true)")
     page.wait_for_timeout(500)
 
-    assert captured.get("body"), "submitReads() never reached /api/reads/submit"
+    assert captured.get("body"), "submitReads() never reached /api/reads/plan"
     run = captured["body"]["runs"][0]
     assert run["NAME"] == "runA"
     assert run["SAMPLE"] == "ERS111"
@@ -255,7 +260,7 @@ def test_reads_submit_blocks_without_matching_experiment_row(page):
     _inject_fake_experiment_dh(page, [])
 
     submitted = {"called": False}
-    page.route("**/api/reads/submit", lambda route: submitted.update(called=True) or route.continue_())
+    page.route("**/api/reads/plan", lambda route: submitted.update(called=True) or route.continue_())
     page.evaluate("() => submitReads(true)")
     page.wait_for_timeout(300)
 

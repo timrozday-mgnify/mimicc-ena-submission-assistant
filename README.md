@@ -1,16 +1,26 @@
 # MIMICC ENA Submission Assistant
 
-A single local web app for submitting **studies**, **samples**, and **sequencing
-reads** to the European Nucleotide Archive (ENA) for the
+A web app for submitting **studies**, **samples**, and **sequencing reads** to
+the European Nucleotide Archive (ENA) for the
 [MIMICC](../ena-submission-dataharmonizer/mimicc) project.
+
+It runs two ways from one codebase, selected by `DEPLOYMENT_MODE`:
+
+- **local** (default) — single user on one machine; auto-logs-in as admin, no
+  login screen. `docker compose` brings up everything.
+- **hosted** — multi-user on a shared server. Username/password accounts gate
+  access; session state and intermediate files live on the server (in Postgres);
+  studies/samples are submitted server-side; and **reads upload goes direct from
+  each user's machine to ENA** via a small local helper (the server never
+  touches read files).
 
 It ties together three existing tools:
 
 | Concern | Reused from | How |
 |---|---|---|
-| Create/modify/list/delete **studies & samples** | [`ena-api-client`](../ena-api-client) + [`ena-submission-dataharmonizer`](../ena-submission-dataharmonizer) `scripts/` | `WebinClient` REST submission + the `submit_study`/`submit_sample` batch builders |
+| Create/modify/list/delete **studies & samples** | [`ena-api-client`](../ena-api-client) + [`ena-submission-dataharmonizer`](../ena-submission-dataharmonizer) `scripts/` | `WebinClient` REST submission (server-side) + the `submit_study`/`submit_sample` batch builders |
 | Enter **sample metadata** | [DataHarmonizer](../DataHarmonizer) | embedded spreadsheet UI (Samples tab) → export → filter/rename → submit |
-| Submit **reads** | [`webin-cli-browser-assistant`](../webin-cli-browser-assistant) | `enasequence/webin-cli` in a Docker sibling container, logs streamed over SSE |
+| Submit **reads** | [`webin-cli-browser-assistant`](../webin-cli-browser-assistant) | a local **read-helper** runs `enasequence/webin-cli` on the user's machine; the browser bridges manifest (server) → helper → result (server) |
 
 New glue added here:
 
@@ -26,29 +36,39 @@ New glue added here:
   lifecycle actions (release/hold/suppress/cancel).
 
 Everything runs against ENA **test** by default; a header toggle switches to
-**production** (with a confirm). Webin credentials live in server memory only.
+**production** (with a confirm). Webin credentials live in server memory only
+(per user) and are never persisted.
 
 ## Architecture
 
 ```
-browser (single-page UI, SSE)
-        │
-   FastAPI server (server/main.py)
-   ├── ena_service.py ── ena-api-client + submit_study/submit_sample (REST/XML)
-   ├── read_assign.py ── scan / suggest / manifest build
-   ├── webin_runner + webin_cli_lib ── docker run enasequence/webin-cli  (reads)
-   └── dh_builder_runner + dh_builder_lib ── docker run mimicc-dh-builder  (DH bundle rebuild)
-        │ (docker.sock)
-   enasequence/webin-cli / mimicc-dh-builder  (sibling containers)
+Browser ── login cookie ──► FastAPI server (server/main.py)
+   │                          ├── auth.py + orm/ ── Django ORM (accounts, sessions, reads ledger) → Postgres
+   │                          ├── ena_service.py ── ena-api-client submit_study/submit_sample (REST/XML, server-side)
+   │                          └── read_assign.py ── suggest + manifest text build
+   │  fetch manifest + plan ◄─┘
+   │  POST manifest + Webin creds
+   ▼
+Local read-helper (127.0.0.1:9100, read-helper/) ── docker run enasequence/webin-cli ──► ENA dropbox
+   │  SSE log stream ─► Browser ─► POST /api/reads/result (server updates the resume ledger)
 ```
 
-The server runs in Docker and spawns both the webin-cli image and the
-`mimicc-dh-builder` image as **sibling containers** via the mounted docker
-socket — the webin-cli path is identical to `webin-cli-browser-assistant`;
-`mimicc-dh-builder` follows the same pattern for on-demand DataHarmonizer
-bundle rebuilds (`POST /api/dh/build` + `GET /api/dh/build/stream/{job_id}`),
-currently used for the build-on-demand plumbing rather than a front-end
-schema editor.
+- **Database**: Django's ORM (used as a standalone library — FastAPI stays the
+  HTTP layer) over **PostgreSQL**. Accounts use Django's `auth.User`; sessions,
+  their full UI state, and the reads resume ledger are owned per user. (When no
+  `DATABASE_URL` is set the ORM falls back to SQLite — used for tests and
+  lightweight local runs.)
+- **Accounts**: a basic username/password system, separate from ENA Webin
+  credentials, with an `admin` superuser (from `ADMIN_USERNAME`/`ADMIN_PASSWORD`)
+  who can manage other accounts (Admin tab). Web logins are DB-backed cookies.
+- **Reads**: the server builds the webin-cli manifest and the upload *plan*
+  (what to upload vs. skip, via the ledger + ENA Reports API), but the upload
+  itself runs on the user's machine in the [read-helper](read-helper/) — reads
+  never pass through the server.
+- **DH bundle rebuild** (`POST /api/dh/build`) still spawns the
+  `mimicc-dh-builder` sibling container, but is now **admin-only** and needs the
+  Docker socket mounted on the server (off by default — the bundle is baked at
+  image-build time).
 
 ## Install & run
 
@@ -59,31 +79,54 @@ with `LINKML_LIB_DIR` in `.env`). Node/Yarn are **not** required on the host —
 the Docker build compiles the embedded DataHarmonizer bundle itself, in a
 dedicated build stage.
 
+### Local (single user)
+
 ```bash
 # 1. Vendor sibling code into ./vendor
 #    (ena-api-client, ena-dh scripts/schemas/XSDs, and standalone linkml-lib)
 bash scripts/vendor.sh
 
-# 2. Put FASTQ/BAM/CRAM files in the reads workspace (default ~/.mimicc-ena/reads),
-#    or set MIMICC_READS_DIR. Also pre-create the DH bundle/schema + sessions dirs
-#    (bind mounts must exist before `docker compose up` — see MIMICC_DH_BUNDLE_DIR /
-#    MIMICC_DH_SCHEMA_DIR / MIMICC_SESSIONS_DIR in .env.example).
-mkdir -p ~/.mimicc-ena/reads ~/.mimicc-ena/dh-bundle ~/.mimicc-ena/dh-schema ~/.mimicc-ena/sessions
+# 2. Configure (admin/admin + bundled Postgres by default)
+cp .env.example .env   # optional — sensible defaults work out of the box
 
-# 3. Start (this also builds the embedded DataHarmonizer bundle — see
-#    "DataHarmonizer bundle build" below)
-docker compose up -d --build
+# 3. Start the app + Postgres + DH sidecar + the local read-helper.
+#    The "local" profile includes the read-helper so reads upload works on one box.
+COMPOSE_PROFILES=local docker compose up -d --build
 open http://localhost:9000
 ```
 
+Postgres data, the DH bundle/schema, and the schema library are kept in named
+Docker volumes (`docker volume ls | grep mimicc`); no host directories need
+pre-creating. Migrations run automatically on startup.
+
+If port 9000 is already taken, set `MIMICC_PORT` in `.env` and open
+`http://localhost:<MIMICC_PORT>`. Stop with `docker compose down` (add
+`--profile local` to also stop the helper).
+
+### Hosted (multi-user)
+
+```bash
+bash scripts/vendor.sh
+cp .env.example .env
+#   - set DEPLOYMENT_MODE=hosted
+#   - change ADMIN_PASSWORD and set a long DJANGO_SECRET_KEY
+#   - set strong POSTGRES_PASSWORD
+#   - set ALLOWED_ORIGINS to your app's public origin if the API is cross-origin
+docker compose up -d --build      # db + app + dhtb (NOT the read-helper)
+```
+
+Put the app behind a TLS-terminating reverse proxy (the login cookie is marked
+`Secure` in hosted mode) and adjust the port binding to expose it. Sign in as
+`admin`, then create user accounts from the **Admin** tab. Each user has their
+own private sessions and submissions.
+
+Each user installs and runs the [read-helper](read-helper/) on their **own
+workstation** (it is what uploads their reads directly to ENA). See
+`read-helper/README.md`; point its `MIMICC_APP_ORIGIN` at your hosted app so the
+browser page is allowed to drive the loopback helper.
+
 If you don't have a `DataHarmonizer` checkout, or want the Samples tab to fall
 back to DH export upload instead, see "DataHarmonizer bundle build" below.
-
-If port 9000 is already taken on your machine, set `MIMICC_PORT` in `.env`
-(see `.env.example`) to expose the server on a different host port and open
-`http://localhost:<MIMICC_PORT>` instead.
-
-Stop with `docker compose down`, or the in-app shutdown endpoint.
 
 ### DataHarmonizer bundle build
 
@@ -274,41 +317,53 @@ button). Everything about a session is saved to disk and restored when you reope
   all result tables, and the Reads/Records logs. Saving is automatic (debounced as you type, plus
   immediately after submits); the header shows "saved …". **Credentials are never saved** — re-enter
   them after a restart.
-- **Where** — `MIMICC_SESSIONS_DIR` (default `~/.mimicc-ena/sessions`): a SQLite registry
-  (`sessions.db`) plus a per-session directory (`<id>/state.json`, `<id>/dh_export.json` (sample
-  metadata grid), `<id>/dh_export_experiment.json` (experiment metadata grid), `<id>/logs/reads.log`).
-- **Resumable reads** — each run gets a stable, session-scoped alias. On submit, runs already
-  submitted in this session or already present in ENA (checked via the Reports API) are
-  **auto-skipped** and shown with their existing accessions, so an interrupted batch resumes by just
-  clicking **Submit** again. Tick a run's **Re-upload** box (or the global "force re-upload all"
-  toggle) to submit it again under a fresh alias (ENA aliases are permanent, so a forced re-upload
-  necessarily creates a new experiment/run).
+- **Where** — in **PostgreSQL**, owned per user (the `SubmissionSession` model: the full UI snapshot,
+  both DataHarmonizer grid exports, and the reads log are columns; the per-run reads ledger is the
+  related `ReadsRun` model). Session **names are unique per user**, so two users can have a session of
+  the same name. (This replaces the old single-user SQLite registry + per-session files on disk.)
+- **Resumable reads** — each run gets a stable, session-scoped alias. The server's upload **plan**
+  skips runs already submitted in this session or already present in ENA (checked via the Reports
+  API) and shows their existing accessions, so an interrupted batch resumes by just clicking
+  **Submit** again. Tick a run's **Re-upload** box (or the global "force re-upload all" toggle) to
+  submit it again under a fresh alias (ENA aliases are permanent, so a forced re-upload necessarily
+  creates a new experiment/run).
 
 ## Using it
 
+0. **Sign in** (hosted mode only) — with your app account; local mode skips this and signs you in
+   as admin automatically.
 1. **Session** — create or open a named session (required before the tabs unlock).
-2. **Credentials** — enter your Webin username/password (memory only).
+2. **Credentials** — enter your Webin username/password (memory only; also forwarded to the local
+   read-helper when it's running, so it can upload).
 3. **Studies** — create a study → note the `PRJEB…` accession.
 4. **Samples** — enter metadata in DataHarmonizer, click **Export to Prepare** (autosaves every
    30s too — see "Export integration" above), **Prepare** (filter + rename), then **Submit** with
    checklist `ERC000025` → `ERS…`/`SAMEA…`.
-5. **Reads** — **Scan** the active reads directory (default workspace, or **Browse…** to point at
-   any folder on disk), **Auto-assign samples** (or export/import the pairing as TSV), fill in
+5. **Reads** — make sure the **read-helper** is running (the Reads tab shows "helper: running"),
+   enter the absolute path to your **local** reads directory, **Scan** (the helper lists read
+   groups), **Auto-assign samples** (or export/import the pairing as TSV), fill in
    platform/instrument/library fields in the **experiment metadata** DataHarmonizer panel (synced
-   from the pairings — see "Experiment metadata schema" above), then **Submit reads to ENA** and
-   watch the streamed webin-cli log → experiment + run accessions. Re-submit to resume.
+   from the pairings — see "Experiment metadata schema" above), then **Submit reads to ENA**. The
+   browser asks the server for the manifest/plan, the helper runs webin-cli locally and streams its
+   log, and the experiment + run accessions are recorded back. Re-submit to resume.
 6. **Records** — browse account records and release/hold/suppress/cancel.
+7. **Admin** (admins only) — create/delete user accounts and reset passwords.
 
 ## Development
 
 ```bash
 python -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt          # full stack (incl. linkml) for all features
+pip install -r requirements.txt          # full stack (incl. Django, linkml) for all features
 pip install -e ../linkml-lib             # shared LinkML helpers
 pip install pytest pytest-asyncio anyio playwright
 bash scripts/vendor.sh                    # so ena_api / ena_common etc. import
 
-# Run the server locally (reads submission needs Docker; other tabs work without it)
+# Apply migrations. With no DATABASE_URL the ORM uses a local SQLite file
+# (.data/app.db); set DATABASE_URL=postgresql://… to use Postgres instead.
+python manage.py migrate
+
+# Run the server locally (reads submission needs the local read-helper running;
+# other tabs work without it). DEPLOYMENT_MODE defaults to local (auto-login).
 PYTHONPATH=server:.:../linkml-lib/src uvicorn main:app --reload --port 9000 --app-dir server
 ```
 
@@ -329,15 +384,19 @@ python -m pytest tests/test_server.py -q   # API only
 
 ```
 server/
-  main.py              FastAPI app: endpoints, jobs, SSE
-  ena_service.py       studies/samples/records/actions (wraps reused libraries)
-  read_assign.py       scan / suggest / manifest build for reads
-  session_store.py     submission sessions: SQLite registry + reads ledger + per-session files
-  webin_runner.py      Docker-in-Docker adapter (from webin-cli-browser-assistant)
-  dh_builder_runner.py Docker-in-Docker adapter for the DH bundle rebuild
+  main.py              FastAPI app: endpoints (auth/admin/sessions/reads plan+result), jobs, SSE
+  auth.py              accounts, login sessions, admin bootstrap, FastAPI auth dependencies
+  orm/                 Django app: settings.py, models.py (User/LoginSession/SubmissionSession/ReadsRun), migrations/
+  dbsetup.py           one-time django.setup() bootstrap for using the ORM standalone
+  ena_service.py       studies/samples/records/actions (wraps reused libraries, server-side REST)
+  read_assign.py       scan / suggest / manifest (text) build for reads
+  session_store.py     submission sessions + reads ledger, Django-ORM-backed, owner-scoped
+  dh_builder_runner.py Docker-in-Docker adapter for the (admin-only) DH bundle rebuild
   schema_service.py    schema library: list/save/delete, ENA XML/XSD import/merge, grid selection
   _bootstrap.py        puts vendored sibling code and linkml-lib on sys.path
-  static/              single-page UI (index.html, app.js) + DH bundle (dh/, bind-mounted)
+  static/              single-page UI (index.html, app.js) + DH bundle (dh/, volume-mounted)
+manage.py          Django management entrypoint (migrations)
+read-helper/       local reads upload helper (runs webin-cli on the user's machine)
 webin_cli_lib/     webin-cli Docker executor (from webin-cli-browser-assistant)
 dh_builder_lib/    mimicc-dh-builder Docker executor (mirrors webin_cli_lib)
 scripts/
@@ -355,16 +414,16 @@ docker-compose.yml
 
 ## Notes
 
-- **Credentials** are never written to disk or logged; re-enter after a restart.
-- **Reads workspace** is mounted read-write so generated manifests sit next to
-  their FASTQs (one `-inputDir` for webin-cli). The default workspace can be
-  overridden per-session: **Browse…** on the Reads tab lists directories via
-  the `/hostroot` mount (now read-write, not just for validation) and lets you
-  point scanning/manifest-writing at any folder on disk — the server itself
-  already controls the host's Docker daemon via the socket mount, so this
-  doesn't meaningfully change the trust boundary of what's meant to be a
-  single-trusted-local-user tool. `/api/reads/browse` and `/api/reads/set-dir`
-  back this; `GET /api/health` reports the active vs. default directory.
-- **Reads** go through webin-cli (Docker), **not** the JAR path in
-  `submit_reads.py` — that module is intentionally not imported (avoids its
-  mgnify-toolkit dependency).
+- **Webin credentials** are never written to disk or logged; held in server
+  memory per user and re-entered after a restart. They are also forwarded to the
+  local read-helper (in its memory only) so it can upload.
+- **App accounts** are separate from Webin credentials. The admin account is
+  (re)created from `ADMIN_USERNAME`/`ADMIN_PASSWORD` on every boot, so those env
+  vars are authoritative for the admin password — change them before hosting.
+- **Reads** go through webin-cli (Docker) on the **user's machine** via the
+  read-helper, **not** the JAR path in `submit_reads.py` (that module is
+  intentionally not imported — avoids its mgnify-toolkit dependency). The hosted
+  server has no access to read files: no Docker socket, `/hostroot`, or reads
+  mount.
+- **Migrations**: `python manage.py makemigrations` / `migrate` (the entrypoint
+  runs `migrate` automatically on startup).

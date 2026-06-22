@@ -1,13 +1,20 @@
 """Shared pytest fixtures.
 
 API tests drive the FastAPI app in-process via httpx ASGITransport (no Docker,
-no network). UI tests drive a real uvicorn server with Playwright, with the
-webin-cli runner patched so no Docker is needed.
+no network). UI tests drive a real uvicorn server with Playwright. Reads upload
+now happens via a local helper, so it is exercised at the plan/result API level
+rather than by running webin-cli.
+
+The Django ORM is pointed at a throwaway SQLite database (configured before any
+app module is imported); ``DEPLOYMENT_MODE=local`` makes every request
+auto-authenticate as the admin user, matching the single-user local experience.
 """
 
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -18,6 +25,23 @@ import pytest
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO / "server"))
 sys.path.insert(0, str(_REPO))
+
+# Configure the ORM to use a throwaway SQLite DB BEFORE importing app modules.
+_DB_FD, _DB_PATH = tempfile.mkstemp(suffix=".sqlite3", prefix="mimicc-test-")
+os.close(_DB_FD)
+os.environ["SQLITE_PATH"] = _DB_PATH
+os.environ.setdefault("DEPLOYMENT_MODE", "local")
+# Tests call the sync ORM directly from async test bodies (low concurrency,
+# single throwaway SQLite DB); allow it. App code keeps ORM off the event loop.
+os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
+
+import dbsetup  # noqa: E402
+
+dbsetup.migrate()
+
+import auth as _auth  # noqa: E402
+
+_auth.bootstrap_admin()
 
 import main as _main  # noqa: E402
 
@@ -36,36 +60,42 @@ async def client():
 
 @pytest.fixture(autouse=True)
 def clean_state():
-    """Reset in-memory jobs and credentials around every test."""
-    saved = _main._credentials
-    _main._jobs.clear()
-    _main._credentials = None
+    """Reset in-memory state and per-user DB rows around every test."""
+    from django.contrib.auth.models import User
+    from orm import models
+
+    def _wipe():
+        _main._jobs.clear()
+        _main._user_credentials.clear()
+        models.ReadsRun.objects.all().delete()
+        models.SubmissionSession.objects.all().delete()
+        models.LoginSession.objects.all().delete()
+        User.objects.exclude(username=_auth.admin_username()).delete()
+
+    _wipe()
     yield
-    _main._jobs.clear()
-    _main._credentials = saved
+    _wipe()
 
 
 @pytest.fixture
 def with_creds():
-    _main._credentials = ("Webin-test", "secret")
-    return _main._credentials
+    """Configure Webin credentials for the (auto-logged-in) admin user."""
+    admin = _auth.get_admin_user()
+    _main._user_credentials[admin.id] = ("Webin-test", "secret")
+    return _main._user_credentials[admin.id]
 
 
 # ---------------------------------------------------------------------------
-# Mock webin-cli runner generators (shared with UI tests)
+# Mock helpers (shared)
 # ---------------------------------------------------------------------------
 
-
-def mock_logs_success(**kwargs):
-    yield "INFO: validating manifest"
-    yield "INFO: The submission has been completed successfully."
-    yield "INFO: experiment ERX9000001 run ERR9000001"
-    return 0
-
-
-def mock_logs_failure(**kwargs):
-    yield "ERROR: invalid sample accession"
-    return 1
+# A webin-cli log as the local helper would stream it back to the browser; the
+# browser relays the final log to /api/reads/result, which parses accessions.
+MOCK_READS_LOG = (
+    "INFO: validating manifest\n"
+    "INFO: The submission has been completed successfully.\n"
+    "INFO: experiment ERX9000001 run ERR9000001\n"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -74,18 +104,12 @@ def mock_logs_failure(**kwargs):
 
 
 @pytest.fixture(scope="session")
-def live_server_url(tmp_path_factory):
-    import session_store
+def live_server_url():
     import uvicorn
 
-    # Point the session store at a throwaway dir (the default /sessions is not
-    # writable in the test environment).
-    sessions_dir = tmp_path_factory.mktemp("sessions")
-    session_store._SESSIONS_DIR = sessions_dir
-    session_store._DB_PATH = sessions_dir / "sessions.db"
+    admin = _auth.get_admin_user()
+    _main._user_credentials[admin.id] = ("Webin-test", "secret")
 
-    _main._credentials = ("Webin-test", "secret")
-    _main.webin_runner.iter_webin_cli_logs = lambda **kw: mock_logs_success(**kw)
     original_list_records = _main.ena_service.list_records
     original_validate_credentials = _main.ena_service.validate_credentials
 

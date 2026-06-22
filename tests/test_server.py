@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 import conftest
 import main as _main
 
@@ -173,63 +171,64 @@ async def test_sample_submit_includes_logs(client, with_creds, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Reads: scan / submit / stream
+# Reads (browser-bridged): plan / result
 # ---------------------------------------------------------------------------
 
-
-async def test_reads_scan(client, tmp_path, monkeypatch):
-    (tmp_path / "MIMICC_A_1_R1.fastq.gz").write_text("x")
-    (tmp_path / "MIMICC_A_1_R2.fastq.gz").write_text("x")
-    monkeypatch.setattr(_main, "_READS_CONTAINER_DIR", tmp_path)
-    r = await client.post("/api/reads/scan", json={})
-    assert r.status_code == 200
-    body = r.json()
-    assert body["count"] == 1
-    assert body["groups"][0]["paired"] is True
-
-
-async def test_reads_submit_empty(client, with_creds):
-    r = await client.post("/api/reads/submit", json={"runs": []})
-    assert r.status_code == 422
+_RUN = {
+    "NAME": "MIMICC_A_1",
+    "STUDY": "ERP1",
+    "SAMPLE": "ERS1",
+    "PLATFORM": "ILLUMINA",
+    "INSTRUMENT": "Illumina MiSeq",
+    "LIBRARY_SOURCE": "METAGENOMIC",
+    "LIBRARY_SELECTION": "PCR",
+    "LIBRARY_STRATEGY": "AMPLICON",
+    "FASTQ1": "MIMICC_A_1_R1.fastq.gz",
+    "FASTQ2": "MIMICC_A_1_R2.fastq.gz",
+}
 
 
-async def test_reads_submit_requires_credentials(client):
-    r = await client.post("/api/reads/submit", json={"runs": [{"NAME": "x"}]})
+async def test_reads_plan_requires_credentials(client):
+    r = await client.post("/api/reads/plan", json={"runs": [_RUN]})
     assert r.status_code == 401
 
 
-async def test_reads_stream(client, with_creds, tmp_path, monkeypatch):
-    monkeypatch.setattr(_main, "_READS_CONTAINER_DIR", tmp_path)
-    monkeypatch.setattr(_main.webin_runner, "iter_webin_cli_logs", lambda **kw: conftest.mock_logs_success(**kw))
-
-    run = {
-        "NAME": "MIMICC_A_1",
-        "STUDY": "ERP1",
-        "SAMPLE": "ERS1",
-        "PLATFORM": "ILLUMINA",
-        "INSTRUMENT": "Illumina MiSeq",
-        "LIBRARY_SOURCE": "METAGENOMIC",
-        "LIBRARY_SELECTION": "PCR",
-        "LIBRARY_STRATEGY": "AMPLICON",
-        "FASTQ1": "MIMICC_A_1_R1.fastq.gz",
-        "FASTQ2": "MIMICC_A_1_R2.fastq.gz",
-    }
-    job = (await client.post("/api/reads/submit", json={"runs": [run], "test": True, "submit": True})).json()
-    job_id = job["job_id"]
-
-    events = []
-    async with client.stream("GET", f"/api/reads/stream/{job_id}") as resp:
-        async for line in resp.aiter_lines():
-            if line.startswith("data:"):
-                events.append(json.loads(line[5:].strip()))
-
-    done = [e for e in events if e.get("done")]
-    assert done, f"no done event in {events}"
-    results = done[0]["results"]
-    assert results[0]["success"] is True
-    assert results[0]["run_accession"] == "ERR9000001"
+async def test_reads_plan_empty(client, with_creds):
+    r = await client.post("/api/reads/plan", json={"runs": []})
+    assert r.status_code == 422
 
 
-async def test_reads_stream_unknown_job(client):
-    r = await client.get("/api/reads/stream/nope")
-    assert r.status_code == 404
+async def test_reads_plan_builds_manifest_text(client, with_creds):
+    # No session => one-off submission with a timestamped alias, no ledger.
+    r = await client.post("/api/reads/plan", json={"runs": [_RUN], "test": True})
+    assert r.status_code == 200
+    plan = r.json()["plan"]
+    assert len(plan) == 1
+    entry = plan[0]
+    assert entry["action"] == "submit"
+    assert entry["name"] == "MIMICC_A_1"
+    # Manifest text references read files by basename and carries the metadata.
+    assert "STUDY\tERP1" in entry["manifest_text"]
+    assert "FASTQ\tMIMICC_A_1_R1.fastq.gz" in entry["manifest_text"]
+    assert entry["manifest_filename"].endswith(".manifest")
+
+
+async def test_reads_plan_invalid_run_marked_skip(client, with_creds):
+    bad = {"NAME": "broken"}  # missing required fields
+    r = await client.post("/api/reads/plan", json={"runs": [bad], "test": True})
+    assert r.status_code == 200
+    entry = r.json()["plan"][0]
+    assert entry["action"] == "skip"
+    assert entry["reason"] == "invalid"
+
+
+async def test_reads_result_parses_accessions(client, with_creds):
+    r = await client.post(
+        "/api/reads/result",
+        json={"name": "MIMICC_A_1", "alias": "MIMICC_A_1_x", "exit_code": 0, "log": conftest.MOCK_READS_LOG},
+    )
+    assert r.status_code == 200
+    result = r.json()["result"]
+    assert result["success"] is True
+    assert result["run_accession"] == "ERR9000001"
+    assert result["experiment_accession"] == "ERX9000001"

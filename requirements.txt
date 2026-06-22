@@ -4,6 +4,10 @@ uvicorn[standard]
 sse-starlette
 python-multipart
 
+# Multi-user database + auth (Django ORM used as a standalone library) + Postgres
+Django>=5,<6
+psycopg[binary]
+
 # ena-api-client, ena-dh scripts, and standalone linkml-lib dependencies
 httpx
 pydantic>=2

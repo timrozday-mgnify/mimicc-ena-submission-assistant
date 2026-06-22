@@ -1,4 +1,23 @@
 services:
+  # PostgreSQL: multi-user session/account store (replaces the single-user
+  # SQLite + per-session files). Bundled so the app runs the same locally and
+  # when hosted.
+  db:
+    image: postgres:16
+    container_name: mimicc-db
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-mimicc}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-mimicc}
+      - POSTGRES_DB=${POSTGRES_DB:-mimicc}
+    volumes:
+      - mimicc-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mimicc}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
   mimicc-server:
     build:
       context: .
@@ -11,65 +30,77 @@ services:
         # Shared LinkML utility package used by the server runtime.
         linkml-lib: ${LINKML_LIB_DIR:-../linkml-lib}
     container_name: mimicc-ena-submission-assistant
+    depends_on:
+      db:
+        condition: service_healthy
+    # In hosted deployments put this behind a TLS-terminating reverse proxy and
+    # change the binding to expose it; bound to loopback by default for local use.
     ports:
       - "127.0.0.1:${MIMICC_PORT:-9000}:9000"
     volumes:
-      # Spawn the enasequence/webin-cli sibling container for reads submission.
-      - /var/run/docker.sock:/var/run/docker.sock
-      # Read-write view of the whole host, used to browse to and read/write
-      # FASTQ/manifest files in an arbitrary directory the user picks (not
-      # just the fixed reads workspace below). The app already controls the
-      # host's Docker daemon via the socket mount above, so this doesn't
-      # meaningfully change the trust boundary of a tool that's meant to run
-      # as a single trusted local user.
-      - /:/hostroot
-      # Persistent per-job logs.
-      - ${HOME}/.mimicc-ena/logs:/app/logs
-      # Read-WRITE reads workspace: place FASTQ/BAM/CRAM files here. The server
-      # writes generated webin-cli manifests alongside them, and the sibling
-      # webin-cli container mounts the same host dir as its -inputDir.
-      - ${MIMICC_READS_DIR:-${HOME}/.mimicc-ena/reads}:/reads
+      # NB: the app no longer mounts the host Docker socket, the whole host
+      # (/hostroot) or a reads workspace — reads upload happens on the user's
+      # machine via the read-helper, and sessions live in Postgres. (Re-adding
+      # the Docker socket is only needed for the admin-only on-demand DH bundle
+      # rebuild; the bundle is otherwise baked at image-build time.)
+      #
       # Built DataHarmonizer bundle, served at /dh. Bind-mounted (rather than
-      # baked into the image) so an on-demand rebuild (mimicc-dh-builder
-      # sibling container) can update it in place; seeded from the image's
-      # build-time bundle on first run (scripts/server_entrypoint.sh).
-      - ${MIMICC_DH_BUNDLE_DIR:-${HOME}/.mimicc-ena/dh-bundle}:/app/server/static/dh
+      # baked into the image) so it can be updated in place; seeded from the
+      # image's build-time bundle on first run (scripts/server_entrypoint.sh).
+      - ${MIMICC_DH_BUNDLE_DIR:-mimicc-dh-bundle}:/app/server/static/dh
       # Editable LinkML schema used to rebuild the DH bundle on demand.
-      - ${MIMICC_DH_SCHEMA_DIR:-${HOME}/.mimicc-ena/dh-schema}:/dh-schema
-      # Submission sessions: SQLite registry (sessions.db) + per-session dirs
-      # holding the full UI snapshot, the DataHarmonizer export and reads logs.
-      - ${MIMICC_SESSIONS_DIR:-${HOME}/.mimicc-ena/sessions}:/sessions
-      # Schema library: saved/imported LinkML schemas the user can pick to
-      # back the sample/experiment DataHarmonizer grids (see /api/schemas).
-      # Seeded from the bundled vendor/schemas/ on first run.
-      - ${MIMICC_SCHEMAS_DIR:-${HOME}/.mimicc-ena/schemas}:/schemas
+      - ${MIMICC_DH_SCHEMA_DIR:-mimicc-dh-schema}:/dh-schema
+      # Schema library: saved/imported LinkML schemas backing the grids.
+      - ${MIMICC_SCHEMAS_DIR:-mimicc-schemas}:/schemas
     environment:
-      - HOST_HOME=${HOME}
-      - HOST_LOGS_DIR=${HOME}/.mimicc-ena/logs
-      # Host path of the reads workspace (used for the sibling -v mount) and the
-      # container path the server reads/writes it through.
-      - HOST_READS_DIR=${MIMICC_READS_DIR:-${HOME}/.mimicc-ena/reads}
-      - READS_CONTAINER_DIR=/reads
-      - DEFAULT_OUTPUT_DIR=${HOME}/.mimicc-ena/output
-      # Host paths backing the DH bundle/schema mounts above (used for the
-      # mimicc-dh-builder sibling -v mounts) and the container path the
-      # server reads the schema through.
-      - HOST_DH_OUTPUT_DIR=${MIMICC_DH_BUNDLE_DIR:-${HOME}/.mimicc-ena/dh-bundle}
-      - HOST_DH_SCHEMA_DIR=${MIMICC_DH_SCHEMA_DIR:-${HOME}/.mimicc-ena/dh-schema}
+      # Deployment mode: "local" auto-logs-in as admin (no login screen);
+      # "hosted" enforces the login + cookie auth + CSRF guard.
+      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-local}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-mimicc}:${POSTGRES_PASSWORD:-mimicc}@db:5432/${POSTGRES_DB:-mimicc}
+      # Admin account, created/updated from these on every boot (env is
+      # authoritative for the admin password).
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-mimicc-ena-insecure-dev-key}
+      # Extra cross-origin browser origins allowed to call the API (the SPA is
+      # same-origin, so usually empty). Comma-separated.
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
+      # Loopback port the browser expects the local read-helper on.
+      - HELPER_PORT=${HELPER_PORT:-9100}
+      # Host paths backing the DH bundle/schema mounts (admin on-demand rebuild)
+      # and container paths the server reads them through.
+      - HOST_DH_OUTPUT_DIR=${MIMICC_DH_BUNDLE_DIR:-mimicc-dh-bundle}
+      - HOST_DH_SCHEMA_DIR=${MIMICC_DH_SCHEMA_DIR:-mimicc-dh-schema}
       - DH_SCHEMA_CONTAINER_DIR=/dh-schema
-      - SESSIONS_CONTAINER_DIR=/sessions
       - SCHEMAS_CONTAINER_DIR=/schemas
-      # Browser-reachable URL of the dhtb sidecar below (the browser talks to
-      # it directly, not through this container) — see /api/health: dhtb_url.
+      # Browser-reachable URL of the dhtb sidecar (the browser talks to it
+      # directly, not through this container) — see /api/health: dhtb_url.
       - DHTB_URL=http://localhost:${MIMICC_DHTB_PORT:-8765}
+    restart: unless-stopped
+
+  # Local reads upload helper. Only started for fully-local single-user use
+  # (profile "local"); in a hosted deployment each user runs the helper on their
+  # own workstation instead (see read-helper/). Start it locally with:
+  #   COMPOSE_PROFILES=local docker compose up -d --build
+  read-helper:
+    profiles: ["local"]
+    build:
+      context: ./read-helper
+    container_name: mimicc-read-helper
+    ports:
+      - "127.0.0.1:${HELPER_PORT:-9100}:9100"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /:/hostroot
+    environment:
+      - HELPER_PORT=${HELPER_PORT:-9100}
+      - HOST_HOME=${HOME}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
     restart: unless-stopped
 
   # DataHarmonizer Template Builder: edit/preview LinkML schemas before
   # selecting them via /api/schemas/select. Sibling service the main app
   # embeds as an iframe (postMessage bridge); see server/static/app.js.
-  # Build it once with its own compose file in
-  # ../dataharmonizer-template-builder, or via `docker compose build dhtb`
-  # here if DHTB_DIR points at that checkout.
   dhtb:
     build:
       context: ${DHTB_DIR:-../dataharmonizer-template-builder}
@@ -82,3 +113,9 @@ services:
     environment:
       - DHTB_FRONTEND_CONFIG_JSON={"hostMode":"embedded","hostName":"MIMICC ENA Submission Assistant","showImportButton":false,"showExportButton":false,"showGenerateButton":true,"showPreviewButton":true,"allowExampleSchema":false}
     restart: unless-stopped
+
+volumes:
+  mimicc-db-data:
+  mimicc-dh-bundle:
+  mimicc-dh-schema:
+  mimicc-schemas:
