@@ -136,8 +136,26 @@
       <option value="dark">Theme: Dark</option>
       <option value="light">Theme: Light</option>
     </select>
+    <span class="session-chip" id="userBox" style="display:none">
+      <span id="userName" class="muted"></span>
+      <button class="icon-btn" type="button" id="logoutBtn" onclick="doLogout()" title="Log out">Log out</button>
+    </span>
   </div>
 </header>
+
+<!-- LOGIN (shown in hosted mode until authenticated) -->
+<div class="modal-overlay" id="loginModal">
+  <div class="modal-box panel" style="max-width:420px">
+    <h2>Sign in</h2>
+    <p class="muted">Sign in to the MIMICC ENA Submission Assistant. These are app
+      accounts managed by the administrator — not your ENA Webin credentials.</p>
+    <div><label>Username</label><input id="loginUsername" autocomplete="username"></div>
+    <div><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password"
+      onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div class="actions"><button class="btn" onclick="doLogin()">Sign in</button></div>
+    <div class="banner" id="loginBanner"></div>
+  </div>
+</div>
 
 <!-- SESSION PICKER (shown on load until a session is active) -->
 <div class="modal-overlay" id="sessionModal">
@@ -163,6 +181,7 @@
   <button data-tab="reads">Reads</button>
   <button data-tab="schema">Schema</button>
   <button data-tab="records">Records</button>
+  <button data-tab="admin" id="adminTabBtn" style="display:none">Admin</button>
 </nav>
 <main>
 
@@ -272,26 +291,19 @@
   <!-- READS -->
   <section class="tab" id="tab-reads">
     <div class="panel">
-      <h2>1 · Scan reads workspace</h2>
-      <p class="muted">Place FASTQ/BAM/CRAM files in the active directory below, or browse to a different folder on disk.
-        Paired-end mates (<code>_R1/_R2</code> or <code>_1/_2</code>) are grouped automatically.</p>
-      <label>Active reads directory</label>
-      <input id="readsDirLabel" readonly>
-      <div class="actions">
-        <button class="btn secondary" onclick="toggleBrowser()">Browse…</button>
-        <button class="btn secondary" id="resetDirBtn" onclick="resetReadsDir()" style="display:none">Reset to default</button>
-        <button class="btn" onclick="scanReads()">Scan</button>
-        <button class="btn secondary" onclick="suggestSamples()">Auto-assign samples</button>
+      <h2>1 · Find your read files (local)</h2>
+      <p class="muted">Your FASTQ/BAM/CRAM files stay on your machine — they upload <b>directly to ENA</b> via the
+        local helper app and never pass through the server. Paired-end mates (<code>_R1/_R2</code> or
+        <code>_1/_2</code>) are grouped automatically. <span id="helperStatus" class="tag">checking helper…</span></p>
+      <div id="helperMissing" class="banner warn" style="display:none">
+        The local <b>reads upload helper</b> isn't running, so reads can't be scanned or uploaded. Start it (see the
+        <code>read-helper</code> app), then <a href="#" onclick="detectHelper();return false">re-check</a>.
       </div>
-      <div id="dirBrowser" class="subpanel" style="display:none">
-        <label>Path</label>
-        <input id="browsePathInput" placeholder="/">
-        <div class="actions">
-          <button class="btn secondary" onclick="browseGo()">Go to path</button>
-          <button class="btn" onclick="selectBrowsedFolder()">Use this folder</button>
-          <button class="btn secondary" onclick="toggleBrowser()">Cancel</button>
-        </div>
-        <div class="scroll" id="browseList" style="margin-top:8px; max-height:260px"></div>
+      <label>Local reads directory (absolute path on your machine)</label>
+      <input id="readsLocalDir" placeholder="/Users/me/mimicc/reads">
+      <div class="actions">
+        <button class="btn" id="scanReadsBtn" onclick="scanReads()">Scan</button>
+        <button class="btn secondary" onclick="suggestSamples()">Auto-assign samples</button>
       </div>
     </div>
     <div class="panel maximizable" id="readsAssignPanel">
@@ -446,6 +458,24 @@
         the table doesn't display), and the first raw row — useful for spotting why a linking
         accession column (e.g. <code>study_accession</code>) came back blank.</p>
       <div class="log" id="recLog"></div>
+    </div>
+  </section>
+
+  <!-- ADMIN (visible to admins only) -->
+  <section class="tab" id="tab-admin">
+    <div class="panel">
+      <h2>User accounts</h2>
+      <p class="muted">App login accounts (separate from ENA Webin credentials). Each user's sessions and
+        submissions are private to them.</p>
+      <div class="scroll" id="adminUserList"></div>
+      <h3>Add a user</h3>
+      <div class="row">
+        <div><label>Username</label><input id="newUserName" autocomplete="off"></div>
+        <div><label>Password</label><input id="newUserPassword" type="password" autocomplete="new-password"></div>
+        <div class="inline" style="align-self:flex-end"><input type="checkbox" id="newUserAdmin"><label style="margin:0">administrator</label></div>
+        <div style="align-self:flex-end"><button class="btn" onclick="createUser()">Create user</button></div>
+      </div>
+      <div class="banner" id="adminBanner"></div>
     </div>
   </section>
 

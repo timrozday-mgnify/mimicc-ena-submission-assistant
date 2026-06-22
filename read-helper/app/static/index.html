@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MIMICC Reads Upload Helper</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem; color: #1a1a1a; }
+    .ok { color: #1a7f37; } .dot { display:inline-block; width:.6rem; height:.6rem; border-radius:50%; background:#1a7f37; margin-right:.4rem; }
+    code { background:#f0f0f0; padding:.1rem .3rem; border-radius:4px; }
+    .muted { color:#666; }
+  </style>
+</head>
+<body>
+  <h1>MIMICC Reads Upload Helper</h1>
+  <p><span class="dot"></span><strong class="ok">Running.</strong></p>
+  <p>
+    This small local helper runs <code>enasequence/webin-cli</code> on your
+    machine so your sequencing reads upload <strong>directly to ENA</strong> and
+    never pass through the hosted server.
+  </p>
+  <p class="muted">
+    Keep this running, then return to the MIMICC ENA Submission Assistant in your
+    browser and go to the <strong>Reads</strong> tab — it will detect this helper
+    automatically.
+  </p>
+  <p id="info" class="muted"></p>
+  <script>
+    fetch('/api/health').then(r => r.json()).then(d => {
+      document.getElementById('info').textContent =
+        `helper v${d.version} · credentials ${d.credentials_configured ? 'set' : 'not set'}`;
+    }).catch(() => {});
+  </script>
+</body>
+</html>

@@ -41,6 +41,8 @@ COPY vendor/ vendor/
 COPY webin_cli_lib/ webin_cli_lib/
 COPY dh_builder_lib/ dh_builder_lib/
 COPY server/ server/
+# Django ORM management entrypoint (migrations).
+COPY manage.py manage.py
 # Built DataHarmonizer bundle (see dh-builder stage above) and the schema it
 # was built from, staged separately from server/static/dh/ and /dh-schema —
 # those are host bind mounts (see docker-compose.yml) seeded from these

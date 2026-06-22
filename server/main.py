@@ -1,17 +1,17 @@
 """FastAPI server for the MIMICC ENA Submission Assistant.
 
-Ties together three existing tools behind one local web app:
+A multi-user web app (single-user when ``DEPLOYMENT_MODE=local``):
 
-  * studies/samples   -> ena-api-client + the ena-submission-dataharmonizer
-    submit scripts (via ``ena_service``)
+  * accounts/sessions  -> ``auth`` + ``session_store`` over the Django ORM
+    (Postgres); accounts are separate from ENA Webin credentials.
+  * studies/samples    -> ena-api-client + the ena-submission-dataharmonizer
+    submit scripts (via ``ena_service``), submitted server-side per user.
   * sample metadata    -> embedded DataHarmonizer (static bundle under /dh)
-  * reads              -> enasequence/webin-cli in a Docker sibling container
-    (via ``webin_runner`` + ``webin_cli_lib``), with read-to-sample assignment
-    handled by ``read_assign``
+  * reads              -> uploaded DIRECT from the user's machine to ENA by the
+    local ``read-helper`` (browser-bridged). The server only builds the manifest
+    and upload plan (``read_assign`` + the resume ledger) and records the result.
 
-Credentials live in server memory only and are never written to disk or logged.
-Long-running reads submission uses the two-phase submit->SSE-stream pattern from
-webin-cli-browser-assistant.
+Webin credentials live in server memory only (per user) and are never persisted.
 """
 
 from __future__ import annotations
@@ -21,34 +21,78 @@ import json
 import os
 import pathlib
 import shutil
-import subprocess
 import tempfile
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
 
+import auth
 import dh_builder_runner
 import ena_service
 import read_assign
 import schema_service
 import session_store
-import webin_runner
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 app = FastAPI(title="mimicc-ena-submission-assistant")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"http://localhost(:\d+)?",
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["*"],
-)
+# CORS: the SPA is served same-origin, so this only matters for explicitly
+# configured cross-origin callers. Credentials are allowed (cookie auth).
+_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+if _ALLOWED_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"http://localhost(:\d+)?",
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_headers=["*"],
+    )
+
+
+@app.on_event("startup")
+def _bootstrap_admin_on_startup() -> None:
+    # Ensure the admin account exists (env-driven) when the app boots.
+    try:
+        auth.bootstrap_admin()
+    except Exception:  # noqa: BLE001 — never block startup on a transient DB hiccup
+        pass
+
+
+# CSRF: cookie auth needs protection against cross-site form posts. In hosted
+# mode, require a custom header on state-changing /api requests (the SPA's fetch
+# helper sets it; cross-site <form> posts cannot). Login is exempt (no cookie
+# yet) so the very first request can succeed.
+_CSRF_EXEMPT = {"/api/auth/login"}
+
+
+@app.middleware("http")
+async def _csrf_guard(request: Request, call_next):
+    if (
+        not auth.is_local()
+        and request.method in ("POST", "PUT", "DELETE")
+        and request.url.path.startswith("/api/")
+        and request.url.path not in _CSRF_EXEMPT
+        and request.headers.get("x-requested-with") is None
+    ):
+        return Response(
+            status_code=403, content='{"detail":"Missing X-Requested-With header"}', media_type="application/json"
+        )
+    return await call_next(request)
+
 
 _executor = ThreadPoolExecutor(max_workers=4)
 
@@ -59,36 +103,11 @@ _DH_DIR = _STATIC / "dh"
 # into the directory this server already serves /dh from.
 _HOST_DH_OUTPUT_DIR = os.environ.get("HOST_DH_OUTPUT_DIR", str(_DH_DIR))
 
-# Reads workspace (read-write mount) — manifests are written here next to FASTQs.
-_READS_CONTAINER_DIR = pathlib.Path(os.environ.get("READS_CONTAINER_DIR", "/reads"))
-_HOST_READS_DIR = os.environ.get("HOST_READS_DIR", str(_READS_CONTAINER_DIR))
-_HOST_OUTPUT_DIR = os.environ.get("DEFAULT_OUTPUT_DIR", f"{_HOST_READS_DIR}/.webin-output")
-
-# Read-write view of the whole host (see docker-compose.yml) — backs the
-# directory browser, letting the user point reads scanning at any host
-# directory instead of just the fixed reads workspace above.
-_HOSTROOT = pathlib.Path(os.environ.get("HOSTROOT", "/hostroot"))
-_HOST_HOME = os.environ.get("HOST_HOME") or str(pathlib.Path.home())
-# None => use the default reads workspace (_READS_CONTAINER_DIR/_HOST_READS_DIR).
-# Otherwise an absolute host path the user picked via the directory browser.
-_active_reads_host_dir: str | None = None
-
-
-def _current_reads_host_dir() -> str:
-    return _active_reads_host_dir or _HOST_READS_DIR
-
-
-def _current_reads_container_dir() -> pathlib.Path:
-    if _active_reads_host_dir is None:
-        return _READS_CONTAINER_DIR
-    return _HOSTROOT / _active_reads_host_dir.lstrip("/")
-
-
-def _current_output_host_dir() -> str:
-    if _active_reads_host_dir is None:
-        return _HOST_OUTPUT_DIR
-    return f"{_active_reads_host_dir.rstrip('/')}/.webin-output"
-
+# The local read-upload helper (browser-bridged) the SPA talks to for reads
+# submission. Reads upload goes direct from the user's machine to ENA via this
+# helper; the server never touches local read files. /api/health advertises the
+# helper's expected loopback port to the browser.
+_HELPER_PORT = int(os.environ.get("HELPER_PORT", "9100"))
 
 # DH schema workspace (read-write mount) — editable LinkML schema used to
 # rebuild the embedded DataHarmonizer bundle on demand.
@@ -100,15 +119,17 @@ _HOST_DH_SCHEMA_DIR = os.environ.get("HOST_DH_SCHEMA_DIR", str(_DH_SCHEMA_CONTAI
 _DHTB_URL = os.environ.get("DHTB_URL", "http://localhost:8765")
 
 
-# In-memory stores only (credentials are never persisted to disk).
+# In-memory stores only (Webin credentials are never persisted to disk). Webin
+# credentials are held per-user, keyed by User.id, and lost on restart/logout.
 _jobs: dict[str, dict[str, Any]] = {}
-_credentials: tuple[str, str] | None = None
+_user_credentials: dict[int, tuple[str, str]] = {}
 
 
-def _creds() -> ena_service.Credentials:
-    if _credentials is None:
+def _creds(user) -> ena_service.Credentials:
+    pair = _user_credentials.get(user.id)
+    if pair is None:
         raise HTTPException(status_code=401, detail="Credentials not set. Enter your Webin username and password.")
-    return ena_service.Credentials(username=_credentials[0], password=_credentials[1])
+    return ena_service.Credentials(username=pair[0], password=pair[1])
 
 
 def _skip_result(run: dict[str, Any], name: str, alias: str, accs: dict[str, Any], reason: str) -> dict[str, Any]:
@@ -164,26 +185,45 @@ class SampleSubmitRequest(BaseModel):
     public: bool = False
 
 
-class ScanRequest(BaseModel):
-    subdir: str | None = None
-
-
-class SetReadsDirRequest(BaseModel):
-    path: str | None = None  # absolute host path; omit/null to reset to the default workspace
-
-
 class SuggestRequest(BaseModel):
     groups: list[dict[str, Any]]
     test: bool = True
     max_results: int = 5000
 
 
-class ReadsSubmitRequest(BaseModel):
+class ReadsPlanRequest(BaseModel):
     runs: list[dict[str, Any]]
     test: bool = True
-    submit: bool = True
     session_id: str | None = None
     force_reupload: bool = False
+
+
+class ReadsResultRequest(BaseModel):
+    session_id: str | None = None
+    name: str
+    alias: str | None = None
+    stable_alias: str | None = None
+    exit_code: int | None = None
+    log: str = ""
+    sample: str = ""
+    study: str = ""
+    experiment_accession: str | None = None
+    run_accession: str | None = None
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class UserCreateRequest(BaseModel):
+    username: str
+    password: str
+    is_admin: bool = False
+
+
+class PasswordRequest(BaseModel):
+    password: str
 
 
 class SessionCreateRequest(BaseModel):
@@ -242,22 +282,92 @@ async def index() -> FileResponse:
 
 
 @app.get("/api/health")
-async def health() -> dict[str, Any]:
+def health(request: Request) -> dict[str, Any]:
+    user = None
+    if auth.is_local():
+        user = auth.get_admin_user()
+    else:
+        user = auth.resolve_user(request.cookies.get(auth.COOKIE_NAME))
+    creds_set = user is not None and user.id in _user_credentials
     return {
         "status": "ok",
-        "credentials_configured": _credentials is not None,
+        "deployment_mode": auth.deployment_mode(),
+        "authenticated": user is not None,
+        "username": getattr(user, "username", None),
+        "is_admin": bool(getattr(user, "is_superuser", False)),
+        "credentials_configured": creds_set,
+        "helper_port": _HELPER_PORT,
         "dh_available": any(_DH_DIR.iterdir()),
-        "reads_dir": str(_current_reads_container_dir()),
-        "host_reads_dir": _current_reads_host_dir(),
-        "default_host_reads_dir": _HOST_READS_DIR,
         "default_sample_filter": ena_service.DEFAULT_SAMPLE_FILTER,
         "dhtb_url": _DHTB_URL,
     }
 
 
+# ---------------------------------------------------------------------------
+# Authentication (login/logout/me) + account management (admin)
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/auth/login")
+def auth_login(req: LoginRequest, response: Response) -> dict[str, Any]:
+    user = auth.authenticate(req.username, req.password)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    token = auth.create_login(user)
+    auth.set_login_cookie(response, token)
+    return {"status": "ok", "user": auth.user_to_dict(user)}
+
+
+@app.post("/api/auth/logout")
+def auth_logout(request: Request, response: Response) -> dict[str, str]:
+    auth.destroy_login(request.cookies.get(auth.COOKIE_NAME))
+    auth.clear_login_cookie(response)
+    return {"status": "ok"}
+
+
+@app.get("/api/auth/me")
+def auth_me(user=Depends(auth.current_user)) -> dict[str, Any]:
+    return {"user": auth.user_to_dict(user), "deployment_mode": auth.deployment_mode()}
+
+
+@app.get("/api/admin/users")
+def admin_users_list(_admin=Depends(auth.require_admin)) -> list[dict[str, Any]]:
+    return auth.list_users()
+
+
+@app.post("/api/admin/users")
+def admin_users_create(req: UserCreateRequest, _admin=Depends(auth.require_admin)) -> dict[str, Any]:
+    try:
+        return auth.create_user(req.username, req.password, is_admin=req.is_admin)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/admin/users/{user_id}")
+def admin_users_delete(user_id: int, _admin=Depends(auth.require_admin)) -> dict[str, str]:
+    try:
+        auth.delete_user(user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "deleted"}
+
+
+@app.post("/api/admin/users/{user_id}/password")
+def admin_users_set_password(user_id: int, req: PasswordRequest, _admin=Depends(auth.require_admin)) -> dict[str, str]:
+    try:
+        auth.set_password(user_id, req.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Webin credentials (per-user, in server memory only — never persisted)
+# ---------------------------------------------------------------------------
+
+
 @app.post("/api/credentials")
-async def set_credentials(req: CredentialsRequest) -> dict[str, str]:
-    global _credentials
+async def set_credentials(req: CredentialsRequest, user=Depends(auth.current_user)) -> dict[str, str]:
     username = req.username.strip()
     if not username or not req.password:
         raise HTTPException(status_code=422, detail="Username and password are required")
@@ -274,45 +384,44 @@ async def set_credentials(req: CredentialsRequest) -> dict[str, str]:
             status_code=502,
             detail=f"Could not validate Webin credentials against the ENA {env_name} service: {exc}",
         ) from exc
-    _credentials = (username, req.password)
+    _user_credentials[user.id] = (username, req.password)
     return {"status": "ok", "username": username, "environment": env_name}
 
 
 @app.delete("/api/credentials")
-async def clear_credentials() -> dict[str, str]:
-    global _credentials
-    _credentials = None
+async def clear_credentials(user=Depends(auth.current_user)) -> dict[str, str]:
+    _user_credentials.pop(user.id, None)
     return {"status": "cleared"}
 
 
 # ---------------------------------------------------------------------------
-# Submission sessions (named, persisted to disk; credentials never stored)
+# Submission sessions (named, persisted in the database, owned per user)
 # ---------------------------------------------------------------------------
 
 
-def _require_session(session_id: str) -> dict[str, Any]:
-    session = session_store.get_session(session_id)
+def _require_session(session_id: str, user) -> dict[str, Any]:
+    session = session_store.get_session(session_id, owner=user)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
 
 
 @app.get("/api/sessions")
-def sessions_list() -> list[dict[str, Any]]:
-    return session_store.list_sessions()
+def sessions_list(user=Depends(auth.current_user)) -> list[dict[str, Any]]:
+    return session_store.list_sessions(user)
 
 
 @app.post("/api/sessions")
-def sessions_create(req: SessionCreateRequest) -> dict[str, Any]:
+def sessions_create(req: SessionCreateRequest, user=Depends(auth.current_user)) -> dict[str, Any]:
     try:
-        return session_store.create_session(req.name, test_env=req.test_env)
+        return session_store.create_session(req.name, user, test_env=req.test_env)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/sessions/{session_id}")
-def sessions_get(session_id: str) -> dict[str, Any]:
-    session = _require_session(session_id)
+def sessions_get(session_id: str, user=Depends(auth.current_user)) -> dict[str, Any]:
+    session = _require_session(session_id, user)
     export, dh_saved_at = session_store.load_dh_export(session_id, "sample")
     exp_export, exp_dh_saved_at = session_store.load_dh_export(session_id, "experiment")
     return {
@@ -328,15 +437,15 @@ def sessions_get(session_id: str) -> dict[str, Any]:
 
 
 @app.delete("/api/sessions/{session_id}")
-def sessions_delete(session_id: str) -> dict[str, str]:
-    _require_session(session_id)
+def sessions_delete(session_id: str, user=Depends(auth.current_user)) -> dict[str, str]:
+    _require_session(session_id, user)
     session_store.delete_session(session_id)
     return {"status": "deleted"}
 
 
 @app.put("/api/sessions/{session_id}/state")
-def sessions_save_state(session_id: str, req: SessionStateRequest) -> dict[str, Any]:
-    _require_session(session_id)
+def sessions_save_state(session_id: str, req: SessionStateRequest, user=Depends(auth.current_user)) -> dict[str, Any]:
+    _require_session(session_id, user)
     if req.test_env is not None:
         session_store.set_test_env(session_id, req.test_env)
     saved_at = session_store.save_state(session_id, req.state)
@@ -344,8 +453,10 @@ def sessions_save_state(session_id: str, req: SessionStateRequest) -> dict[str, 
 
 
 @app.post("/api/sessions/{session_id}/dh-export/{kind}")
-def sessions_save_dh_export(session_id: str, kind: str, req: DhExportRequest) -> dict[str, Any]:
-    _require_session(session_id)
+def sessions_save_dh_export(
+    session_id: str, kind: str, req: DhExportRequest, user=Depends(auth.current_user)
+) -> dict[str, Any]:
+    _require_session(session_id, user)
     try:
         saved_at = session_store.save_dh_export(session_id, req.export, kind)
     except ValueError as exc:
@@ -354,8 +465,8 @@ def sessions_save_dh_export(session_id: str, kind: str, req: DhExportRequest) ->
 
 
 @app.get("/api/sessions/{session_id}/dh-export/{kind}")
-def sessions_get_dh_export(session_id: str, kind: str) -> dict[str, Any]:
-    _require_session(session_id)
+def sessions_get_dh_export(session_id: str, kind: str, user=Depends(auth.current_user)) -> dict[str, Any]:
+    _require_session(session_id, user)
     try:
         export, saved_at = session_store.load_dh_export(session_id, kind)
     except ValueError as exc:
@@ -369,8 +480,8 @@ def sessions_get_dh_export(session_id: str, kind: str) -> dict[str, Any]:
 
 
 @app.post("/api/study/submit")
-def study_submit(req: StudySubmitRequest) -> dict[str, Any]:
-    creds = _creds()
+def study_submit(req: StudySubmitRequest, user=Depends(auth.current_user)) -> dict[str, Any]:
+    creds = _creds(user)
     try:
         return ena_service.submit_studies(
             creds,
@@ -385,8 +496,10 @@ def study_submit(req: StudySubmitRequest) -> dict[str, Any]:
 
 
 @app.get("/api/study/list")
-def study_list(test: bool = True, status: str = "all", max_results: int = 5000) -> list[dict[str, Any]]:
-    return ena_service.list_records(_creds(), "studies", test=test, status=status, max_results=max_results)
+def study_list(
+    test: bool = True, status: str = "all", max_results: int = 5000, user=Depends(auth.current_user)
+) -> list[dict[str, Any]]:
+    return ena_service.list_records(_creds(user), "studies", test=test, status=status, max_results=max_results)
 
 
 # ---------------------------------------------------------------------------
@@ -405,8 +518,8 @@ def sample_prepare(req: PrepareRequest) -> dict[str, Any]:
 
 
 @app.post("/api/sample/submit")
-def sample_submit(req: SampleSubmitRequest) -> dict[str, Any]:
-    creds = _creds()
+def sample_submit(req: SampleSubmitRequest, user=Depends(auth.current_user)) -> dict[str, Any]:
+    creds = _creds(user)
     try:
         return ena_service.submit_samples(
             creds,
@@ -422,8 +535,10 @@ def sample_submit(req: SampleSubmitRequest) -> dict[str, Any]:
 
 
 @app.get("/api/sample/list")
-def sample_list(test: bool = True, status: str = "all", max_results: int = 5000) -> list[dict[str, Any]]:
-    return ena_service.list_records(_creds(), "samples", test=test, status=status, max_results=max_results)
+def sample_list(
+    test: bool = True, status: str = "all", max_results: int = 5000, user=Depends(auth.current_user)
+) -> list[dict[str, Any]]:
+    return ena_service.list_records(_creds(user), "samples", test=test, status=status, max_results=max_results)
 
 
 # ---------------------------------------------------------------------------
@@ -432,16 +547,18 @@ def sample_list(test: bool = True, status: str = "all", max_results: int = 5000)
 
 
 @app.get("/api/records/{entity}")
-def records_list(entity: str, test: bool = True, status: str = "all", max_results: int = 5000) -> list[dict[str, Any]]:
+def records_list(
+    entity: str, test: bool = True, status: str = "all", max_results: int = 5000, user=Depends(auth.current_user)
+) -> list[dict[str, Any]]:
     try:
-        return ena_service.list_records(_creds(), entity, test=test, status=status, max_results=max_results)
+        return ena_service.list_records(_creds(user), entity, test=test, status=status, max_results=max_results)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/records/action")
-def records_action(req: ActionRequest) -> dict[str, Any]:
-    creds = _creds()
+def records_action(req: ActionRequest, user=Depends(auth.current_user)) -> dict[str, Any]:
+    creds = _creds(user)
     try:
         return ena_service.run_action(
             creds,
@@ -456,298 +573,160 @@ def records_action(req: ActionRequest) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Reads: scan / suggest / submit (SSE)
+# Reads (browser-bridged): suggest / plan / result
+#
+# Reads upload goes DIRECT from the user's machine to ENA via the local helper.
+# The server never touches local read files. It only:
+#   * suggest  — matches scanned read groups to ENA samples (server-side creds),
+#   * plan     — decides which runs to upload vs. skip (ledger + ENA lookup) and
+#                hands the browser the webin-cli manifest text for each upload,
+#   * result   — records the outcome the browser relays back from the helper.
 # ---------------------------------------------------------------------------
 
 
-def _reads_workdir(subdir: str | None) -> pathlib.Path:
-    base = _current_reads_container_dir()
-    if subdir:
-        candidate = (base / subdir).resolve()
-        if base.resolve() not in candidate.parents and candidate != base.resolve():
-            raise HTTPException(status_code=400, detail="subdir must be inside the active reads directory")
-        return candidate
-    return base
-
-
-def _host_path_to_local(host_path: str) -> pathlib.Path:
-    """Resolve an absolute host path to its view under the /hostroot mount."""
-    p = pathlib.PurePosixPath(host_path)
-    if not p.is_absolute():
-        raise HTTPException(status_code=400, detail=f"Path must be absolute: {host_path}")
-    return _HOSTROOT / str(p).lstrip("/")
-
-
-@app.get("/api/reads/browse")
-def reads_browse(path: str | None = None) -> dict[str, Any]:
-    host_path = path or _HOST_HOME
-    local = _host_path_to_local(host_path)
-    if not local.is_dir():
-        raise HTTPException(status_code=404, detail=f"Not a directory: {host_path}")
-    dirs: list[str] = []
-    try:
-        entries = sorted(local.iterdir(), key=lambda p: p.name.lower())
-    except (PermissionError, OSError):
-        entries = []
-    for entry in entries:
-        if entry.name.startswith("."):
-            continue
-        try:
-            if entry.is_dir():
-                dirs.append(entry.name)
-        except OSError:
-            continue  # unreadable or special file (socket, device, ...)
-    norm = host_path.rstrip("/") or "/"
-    parent = None if norm == "/" else (str(pathlib.PurePosixPath(norm).parent))
-    return {"path": norm, "parent": parent, "dirs": dirs}
-
-
-@app.post("/api/reads/set-dir")
-def reads_set_dir(req: SetReadsDirRequest) -> dict[str, Any]:
-    global _active_reads_host_dir
-    if not req.path:
-        _active_reads_host_dir = None
-    else:
-        if not _host_path_to_local(req.path).is_dir():
-            raise HTTPException(status_code=400, detail=f"Not a directory: {req.path}")
-        _active_reads_host_dir = req.path.rstrip("/") or "/"
-    return {
-        "reads_dir": str(_current_reads_container_dir()),
-        "host_reads_dir": _current_reads_host_dir(),
-        "default_host_reads_dir": _HOST_READS_DIR,
-    }
-
-
-@app.post("/api/reads/scan")
-def reads_scan(req: ScanRequest) -> dict[str, Any]:
-    workdir = _reads_workdir(req.subdir)
-    groups = read_assign.scan_reads(workdir)
-    return {
-        "reads_dir": str(workdir),
-        "host_reads_dir": _current_reads_host_dir(),
-        "groups": groups,
-        "count": len(groups),
-    }
-
-
 @app.post("/api/reads/suggest")
-def reads_suggest(req: SuggestRequest) -> dict[str, Any]:
-    samples = ena_service.list_records(_creds(), "samples", test=req.test, max_results=req.max_results)
+def reads_suggest(req: SuggestRequest, user=Depends(auth.current_user)) -> dict[str, Any]:
+    samples = ena_service.list_records(_creds(user), "samples", test=req.test, max_results=req.max_results)
     return {"groups": read_assign.suggest(req.groups, samples), "samples": samples}
 
 
-@app.post("/api/reads/submit")
-def reads_submit(req: ReadsSubmitRequest) -> dict[str, str]:
-    _creds()  # fail fast
+@app.post("/api/reads/plan")
+def reads_plan(req: ReadsPlanRequest, user=Depends(auth.current_user)) -> dict[str, Any]:
+    """Decide, per run, whether to upload or skip, and build manifest text for
+    the runs to upload. Skips (already-in-ENA / cached) are recorded in the
+    ledger here; the browser only uploads the runs marked ``action == "submit"``.
+    """
+    creds = _creds(user)
     if not req.runs:
         raise HTTPException(status_code=422, detail="No runs provided")
-    job_id = str(uuid.uuid4())
-    _jobs[job_id] = {"config": req.model_dump(), "status": "pending", "results": []}
-    return {"job_id": job_id}
 
+    session = _require_session(req.session_id, user) if req.session_id else None
+    force = req.force_reupload
 
-@app.get("/api/reads/stream/{job_id}")
-async def reads_stream(job_id: str) -> EventSourceResponse:
-    if job_id not in _jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
-    job = _jobs[job_id]
+    def stable_alias(run_name: str) -> str | None:
+        if session is None:
+            return None  # one-off: manifest uses a timestamped alias, no ledger
+        return session_store.session_run_alias(session["name"], run_name)
 
-    async def event_generator():
-        if job["status"] != "pending":
-            yield {"data": json.dumps({"error": "Job already started or completed"})}
-            return
-        job["status"] = "running"
-        cfg = job["config"]
+    # Pre-compute stable aliases + a single ENA lookup for the batch.
+    stable_by_name: dict[str, str | None] = {}
+    candidate_aliases: set[str] = set()
+    for idx, run in enumerate(req.runs, start=1):
+        name = run.get("NAME", f"run{idx}")
+        stable = stable_alias(name)
+        stable_by_name[name] = stable
+        if stable and not (force or run.get("reupload", False)):
+            candidate_aliases.add(stable)
 
+    existing: dict[str, dict[str, str]] = {}
+    warnings: list[str] = []
+    if session is not None and not force and candidate_aliases:
         try:
-            creds = _creds()
-        except HTTPException as exc:
-            job["status"] = "failed"
-            yield {"data": json.dumps({"error": exc.detail})}
-            return
+            existing = ena_service.lookup_existing_runs(creds, candidate_aliases, test=req.test)
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"Could not check ENA for existing runs ({exc}); proceeding to submit.")
 
-        loop = asyncio.get_event_loop()
-        queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+    plan: list[dict[str, Any]] = []
+    for idx, run in enumerate(req.runs, start=1):
+        name = run.get("NAME", f"run{idx}")
+        stable = stable_by_name[name]
+        run_forced = force or run.get("reupload", False)
 
-        reads_container_dir = _current_reads_container_dir()
-        reads_host_dir = _current_reads_host_dir()
-        output_host_dir = _current_output_host_dir()
-
-        # Session context (optional — without it, behave as a one-off submission
-        # with timestamped aliases and no resume ledger, as before).
-        session_id = cfg.get("session_id")
-        session = session_store.get_session(session_id) if session_id else None
-        force_reupload = cfg.get("force_reupload", False)
-
-        # Ensure the webin-cli output dir exists (the active reads dir is
-        # read-write, whether it's the default workspace or a browsed-to host
-        # directory via the now read-write /hostroot mount).
-        try:
-            (reads_container_dir / ".webin-output").mkdir(parents=True, exist_ok=True)
-        except OSError:
-            pass
-
-        def _emit(line: str) -> None:
-            loop.call_soon_threadsafe(queue.put_nowait, ("line", line))
-            if session is not None:
-                session_store.append_reads_log(session_id, line)
-
-        def _stable_alias(run: dict[str, Any], run_name: str) -> str | None:
-            if session is None:
-                return None  # one-off: build_manifest uses a timestamped alias
-            return session_store.session_run_alias(session["name"], run_name)
-
-        def _existing_in_ena(stable_aliases: set[str]) -> dict[str, dict[str, str]]:
-            """One Reports API lookup for all candidate aliases; tolerate failure."""
-            if session is None or force_reupload or not stable_aliases:
-                return {}
-            try:
-                return ena_service.lookup_existing_runs(creds, stable_aliases, test=cfg["test"])
-            except Exception as exc:  # noqa: BLE001
-                _emit(f"WARNING: could not check ENA for existing runs ({exc}); proceeding to submit.")
-                return {}
-
-        def _produce() -> None:
-            results: list[dict[str, Any]] = []
-
-            # Pre-compute stable aliases and pre-check ENA once for the batch.
-            stable_by_idx: dict[int, str | None] = {}
-            candidate_aliases: set[str] = set()
-            for idx, run in enumerate(cfg["runs"], start=1):
-                run_name = run.get("NAME", f"run{idx}")
-                stable = _stable_alias(run, run_name)
-                stable_by_idx[idx] = stable
-                run_forced = force_reupload or run.get("reupload", False)
-                if stable and not run_forced:
-                    candidate_aliases.add(stable)
-            existing = _existing_in_ena(candidate_aliases)
-
-            for idx, run in enumerate(cfg["runs"], start=1):
-                name = run.get("NAME", f"run{idx}")
-                stable = stable_by_idx[idx]
-                run_forced = force_reupload or run.get("reupload", False)
-                _emit(f"=== [{idx}/{len(cfg['runs'])}] {name} ===")
-
-                # Resume short-circuits (only when we have a session + stable alias).
-                if session is not None and stable and not run_forced:
-                    ledger = session_store.get_reads_run(session_id, name)
-                    if (
-                        ledger
-                        and ledger["status"] in (session_store.STATUS_DONE, session_store.STATUS_ALREADY_IN_ENA)
-                        and (ledger.get("run_accession") or ledger.get("experiment_accession"))
-                    ):
-                        _emit(
-                            f"SKIP: already submitted in this session ({ledger.get('run_accession') or ledger.get('experiment_accession')})."
-                        )
-                        results.append(_skip_result(run, name, stable, ledger, "cached"))
-                        loop.call_soon_threadsafe(queue.put_nowait, ("result", results[-1]))
-                        continue
-                    if stable in existing:
-                        accs = existing[stable]
-                        session_store.upsert_reads_run(
-                            session_id,
-                            name,
-                            stable,
-                            session_store.STATUS_ALREADY_IN_ENA,
-                            experiment_accession=accs.get("experiment_accession") or None,
-                            run_accession=accs.get("run_accession") or None,
-                        )
-                        _emit(
-                            f"SKIP: already in ENA ({accs.get('run_accession') or accs.get('experiment_accession')}). Use Re-upload to submit again."
-                        )
-                        results.append(_skip_result(run, name, stable, accs, "already_in_ena"))
-                        loop.call_soon_threadsafe(queue.put_nowait, ("result", results[-1]))
-                        continue
-
-                # Build manifest. Stable alias by default; a fresh timestamped
-                # alias when re-uploading (ENA aliases are permanent).
-                manifest_alias: str | None = stable
-                if stable and run_forced:
-                    manifest_alias = f"{stable}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                try:
-                    alias, manifest_path = read_assign.build_manifest(run, reads_container_dir, alias=manifest_alias)
-                except ValueError as exc:
-                    _emit(f"SKIP: {exc}")
-                    results.append(
-                        {"name": name, "success": False, "skipped": True, "reason": "invalid", "messages": str(exc)}
-                    )
-                    loop.call_soon_threadsafe(queue.put_nowait, ("result", results[-1]))
-                    continue
-
-                manifest_host_path = f"{reads_host_dir.rstrip('/')}/{manifest_path.name}"
-                lines: list[str] = []
-                gen = webin_runner.iter_webin_cli_logs(
-                    context="reads",
-                    manifest_host_path=manifest_host_path,
-                    input_host_dir=reads_host_dir,
-                    output_host_dir=output_host_dir,
-                    username=creds.username,
-                    password=creds.password,
-                    submit=cfg["submit"],
-                    test=cfg["test"],
+        # Resume short-circuits (only with a session + stable alias).
+        if session is not None and stable and not run_forced:
+            ledger = session_store.get_reads_run(req.session_id, name)
+            if (
+                ledger
+                and ledger["status"] in (session_store.STATUS_DONE, session_store.STATUS_ALREADY_IN_ENA)
+                and (ledger.get("run_accession") or ledger.get("experiment_accession"))
+            ):
+                plan.append({**_skip_result(run, name, stable, ledger, "cached"), "action": "skip"})
+                continue
+            if stable in existing:
+                accs = existing[stable]
+                session_store.upsert_reads_run(
+                    req.session_id,
+                    name,
+                    stable,
+                    session_store.STATUS_ALREADY_IN_ENA,
+                    experiment_accession=accs.get("experiment_accession") or None,
+                    run_accession=accs.get("run_accession") or None,
                 )
-                exit_code: int | None = None
-                try:
-                    while True:
-                        line = next(gen)
-                        lines.append(line)
-                        _emit(line)
-                except StopIteration as si:
-                    exit_code = si.value
-                except Exception as exc:  # noqa: BLE001
-                    _emit(f"ERROR: {exc}")
-                    exit_code = 1
+                plan.append({**_skip_result(run, name, stable, accs, "already_in_ena"), "action": "skip"})
+                continue
 
-                accs = read_assign.parse_accessions(lines)
-                result = {
+        # Manifest alias: stable by default; fresh timestamped one on re-upload
+        # (ENA aliases are permanent).
+        manifest_alias: str | None = stable
+        if stable and run_forced:
+            manifest_alias = f"{stable}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        try:
+            alias, manifest_text = read_assign.build_manifest_text(run, alias=manifest_alias)
+        except ValueError as exc:
+            plan.append(
+                {
                     "name": name,
-                    "alias": alias,
-                    "sample": run.get("SAMPLE", ""),
-                    "study": run.get("STUDY", ""),
-                    "exit_code": exit_code,
-                    "success": exit_code == 0,
-                    "skipped": False,
-                    **accs,
+                    "action": "skip",
+                    "success": False,
+                    "skipped": True,
+                    "reason": "invalid",
+                    "messages": str(exc),
                 }
-                results.append(result)
-                if session is not None and stable:
-                    session_store.upsert_reads_run(
-                        session_id,
-                        name,
-                        stable,
-                        session_store.STATUS_DONE if exit_code == 0 else session_store.STATUS_FAILED,
-                        experiment_accession=accs.get("experiment_accession"),
-                        run_accession=accs.get("run_accession"),
-                        submitted_alias=alias,
-                    )
-                loop.call_soon_threadsafe(queue.put_nowait, ("result", result))
+            )
+            continue
 
-            loop.call_soon_threadsafe(queue.put_nowait, ("__DONE__", results))
+        plan.append(
+            {
+                "name": name,
+                "action": "submit",
+                "alias": alias,
+                "stable_alias": stable,
+                "manifest_filename": f"{alias}.manifest",
+                "manifest_text": manifest_text,
+                "sample": run.get("SAMPLE", ""),
+                "study": run.get("STUDY", ""),
+            }
+        )
 
-        loop.run_in_executor(_executor, _produce)
-
-        while True:
-            kind, payload = await queue.get()
-            ts = datetime.now(UTC).isoformat()
-            if kind == "__DONE__":
-                job["status"] = "done"
-                job["results"] = payload
-                yield {"data": json.dumps({"done": True, "results": payload, "ts": ts})}
-                break
-            if kind == "result":
-                yield {"data": json.dumps({"result": payload, "ts": ts})}
-            else:
-                yield {"data": json.dumps({"line": payload, "ts": ts})}
-
-    return EventSourceResponse(event_generator())
+    return {"plan": plan, "warnings": warnings}
 
 
-@app.get("/api/reads/status/{job_id}")
-async def reads_status(job_id: str) -> dict[str, Any]:
-    if job_id not in _jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
-    job = _jobs[job_id]
-    return {"status": job["status"], "results": job.get("results", [])}
+@app.post("/api/reads/result")
+def reads_result(req: ReadsResultRequest, user=Depends(auth.current_user)) -> dict[str, Any]:
+    """Record the outcome of a helper-run upload and update the ledger/log."""
+    session = _require_session(req.session_id, user) if req.session_id else None
+
+    accs = read_assign.parse_accessions(req.log.splitlines()) if req.log else {}
+    if req.experiment_accession:
+        accs["experiment_accession"] = req.experiment_accession
+    if req.run_accession:
+        accs["run_accession"] = req.run_accession
+
+    result = {
+        "name": req.name,
+        "alias": req.alias,
+        "sample": req.sample,
+        "study": req.study,
+        "exit_code": req.exit_code,
+        "success": req.exit_code == 0,
+        "skipped": False,
+        **accs,
+    }
+
+    if session is not None:
+        if req.log:
+            session_store.append_reads_log(req.session_id, req.log.rstrip("\n"))
+        stable = req.stable_alias or session_store.session_run_alias(session["name"], req.name)
+        session_store.upsert_reads_run(
+            req.session_id,
+            req.name,
+            stable,
+            session_store.STATUS_DONE if req.exit_code == 0 else session_store.STATUS_FAILED,
+            experiment_accession=accs.get("experiment_accession"),
+            run_accession=accs.get("run_accession"),
+            submitted_alias=req.alias,
+        )
+    return {"result": result}
 
 
 # ---------------------------------------------------------------------------
@@ -883,7 +862,9 @@ def schemas_select(req: SchemaSelectRequest) -> dict[str, str]:
 
 
 @app.post("/api/dh/build")
-def dh_build(req: DhBuildRequest) -> dict[str, str]:
+def dh_build(req: DhBuildRequest, _admin=Depends(auth.require_admin)) -> dict[str, str]:
+    # Rebuilding the DH bundle spawns a sibling container on the host Docker
+    # daemon and writes the globally-served bundle, so it is restricted to admins.
     job_id = str(uuid.uuid4())
     _jobs[job_id] = {"config": req.model_dump(), "status": "pending", "results": []}
     return {"job_id": job_id}
@@ -940,13 +921,3 @@ async def dh_build_stream(job_id: str) -> EventSourceResponse:
             yield {"data": json.dumps({"line": payload, "ts": ts})}
 
     return EventSourceResponse(event_generator())
-
-
-@app.post("/api/shutdown")
-async def shutdown() -> dict[str, str]:
-    async def _stop() -> None:
-        await asyncio.sleep(0.5)
-        subprocess.Popen(["docker", "stop", "mimicc-ena-submission-assistant"])
-
-    asyncio.create_task(_stop())
-    return {"status": "stopping"}

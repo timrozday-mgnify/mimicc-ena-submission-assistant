@@ -13,15 +13,38 @@ let READS_RUNS = {};        // run_name -> reads ledger row (resume status) for 
 
 const $ = (id) => document.getElementById(id);
 
+let HELPER_BASE = "";       // base URL of the local reads upload helper, e.g. http://localhost:9100
+let HELPER_OK = false;      // whether the helper is currently reachable
+
 async function api(path, opts = {}) {
   const res = await fetch(path, {
+    // X-Requested-With satisfies the server's CSRF guard in hosted mode; it is
+    // a header a cross-site <form> post cannot set.
+    headers: { "Content-Type": "application/json", "X-Requested-With": "fetch" },
+    credentials: "same-origin",
+    ...opts,
+  });
+  const text = await res.text();
+  let body;
+  try { body = text ? JSON.parse(text) : {}; } catch { body = { detail: text }; }
+  if (res.status === 401 && HEALTH && HEALTH.deployment_mode === "hosted" && !path.startsWith("/api/auth/")) {
+    // Session expired / not signed in — surface the login overlay.
+    $("loginModal").classList.add("show");
+  }
+  if (!res.ok) throw new Error(body.detail || `HTTP ${res.status}`);
+  return body;
+}
+
+// Call the local reads upload helper (cross-origin to 127.0.0.1:<helper_port>).
+async function helperApi(path, opts = {}) {
+  const res = await fetch(HELPER_BASE + path, {
     headers: { "Content-Type": "application/json" },
     ...opts,
   });
   const text = await res.text();
   let body;
   try { body = text ? JSON.parse(text) : {}; } catch { body = { detail: text }; }
-  if (!res.ok) throw new Error(body.detail || `HTTP ${res.status}`);
+  if (!res.ok) throw new Error(body.detail || `helper HTTP ${res.status}`);
   return body;
 }
 
@@ -192,7 +215,7 @@ async function openSession(id) {
 // interactive state (run rows, samples, prepared records) is captured as data.
 const _FIELD_IDS = [
   "studyJson", "studyHold", "sampleFilter", "sampleChecklist", "sampleHold",
-  "defaultStudy", "recEntity", "recStatus", "dhExport",
+  "defaultStudy", "recEntity", "recStatus", "dhExport", "readsLocalDir",
 ];
 const _CHECK_IDS = ["studyModify", "studyPublic", "sampleModify", "samplePublic", "forceReupload"];
 const _RESULT_IDS = ["studyOut", "prepOut", "sampleOut", "recOut", "readsResults"];
@@ -336,6 +359,7 @@ document.querySelectorAll("nav button").forEach((b) => {
     document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
     b.classList.add("active");
     $("tab-" + b.dataset.tab).classList.add("active");
+    if (b.dataset.tab === "admin") loadUsers();
   };
 });
 
@@ -354,8 +378,13 @@ $("prodToggle").onchange = (e) => {
 // Credentials
 // ---------------------------------------------------------------------------
 async function saveCreds() {
+  const username = $("username").value, password = $("password").value;
   try {
-    await api("/api/credentials", { method: "POST", body: JSON.stringify({ username: $("username").value, password: $("password").value, test: TEST }) });
+    await api("/api/credentials", { method: "POST", body: JSON.stringify({ username, password, test: TEST }) });
+    // Also hand the credentials to the local helper so it can upload reads
+    // (the helper holds them in memory only). Best-effort — reads can be
+    // re-credentialed later if the helper isn't up yet.
+    if (HELPER_OK) { try { await pushCredsToHelper(username, password); } catch (_) {} }
     $("password").value = "";
     banner("credBanner", true, `Credentials validated and saved for ${TEST ? "TEST" : "PRODUCTION"} (memory only).`);
     refreshHealth();
@@ -363,19 +392,52 @@ async function saveCreds() {
 }
 async function clearCreds() {
   await api("/api/credentials", { method: "DELETE" });
+  if (HELPER_OK) { try { await helperApi("/api/credentials", { method: "DELETE" }); } catch (_) {} }
   banner("credBanner", true, "Credentials cleared.");
   refreshHealth();
+}
+async function pushCredsToHelper(username, password) {
+  await helperApi("/api/credentials", { method: "POST", body: JSON.stringify({ username, password }) });
 }
 async function refreshHealth() {
   HEALTH = await api("/api/health");
   const s = $("credStatus");
   s.textContent = "credentials: " + (HEALTH.credentials_configured ? "set" : "not set");
   s.className = "creds-status " + (HEALTH.credentials_configured ? "on" : "");
+  // Account UI: show the signed-in user + admin tab.
+  if (HEALTH.username) {
+    $("userBox").style.display = "inline-flex";
+    $("userName").textContent = HEALTH.username + (HEALTH.is_admin ? " (admin)" : "");
+    // Hide the explicit Log out button in local single-user mode.
+    $("logoutBtn").style.display = HEALTH.deployment_mode === "hosted" ? "inline-block" : "none";
+  }
+  $("adminTabBtn").style.display = HEALTH.is_admin ? "inline-block" : "none";
   // Seed the default sample filter only when empty (don't clobber a restored
   // session value).
   if (!$("sampleFilter").value) $("sampleFilter").value = HEALTH.default_sample_filter || "";
-  applyActiveReadsDir(HEALTH);
   if (!HEALTH.dh_available) { $("dhWrap").style.display = "none"; $("dhMissing").style.display = "block"; }
+  // Locate + probe the local reads upload helper.
+  if (HEALTH.helper_port) HELPER_BASE = `http://localhost:${HEALTH.helper_port}`;
+  detectHelper();
+}
+
+// ---------------------------------------------------------------------------
+// Local reads upload helper detection
+// ---------------------------------------------------------------------------
+async function detectHelper() {
+  const pill = $("helperStatus");
+  try {
+    const h = await helperApi("/api/health");
+    HELPER_OK = h.status === "ok";
+  } catch (_) { HELPER_OK = false; }
+  if (pill) {
+    pill.textContent = HELPER_OK ? "helper: running" : "helper: not detected";
+    pill.className = "tag" + (HELPER_OK ? " high" : "");
+  }
+  const miss = $("helperMissing");
+  if (miss) miss.style.display = HELPER_OK ? "none" : "block";
+  if ($("scanReadsBtn")) $("scanReadsBtn").disabled = !HELPER_OK;
+  return HELPER_OK;
 }
 
 // ---------------------------------------------------------------------------
@@ -886,71 +948,11 @@ async function submitSamples() {
 }
 
 // ---------------------------------------------------------------------------
-// Reads: active directory + browser
-// ---------------------------------------------------------------------------
-let BROWSE_PATH = null;
-
-function applyActiveReadsDir(health) {
-  $("readsDirLabel").value = health.host_reads_dir || "/reads";
-  $("resetDirBtn").style.display = (health.host_reads_dir === health.default_host_reads_dir) ? "none" : "inline-block";
-}
-
-function toggleBrowser() {
-  const el = $("dirBrowser");
-  const show = el.style.display === "none";
-  el.style.display = show ? "block" : "none";
-  if (show) browseGoTo(BROWSE_PATH || HEALTH.host_reads_dir || "/");
-}
-
-async function browseGoTo(path) {
-  try {
-    const r = await api("/api/reads/browse?path=" + encodeURIComponent(path));
-    BROWSE_PATH = r.path;
-    $("browsePathInput").value = r.path;
-    renderBrowseList(r);
-  } catch (e) { banner("readsBanner", false, e.message); }
-}
-
-function renderBrowseList(r) {
-  const el = $("browseList");
-  el.className = "scroll dirlist";
-  let h = "";
-  if (r.parent !== null) {
-    h += `<a href="#" data-path="${r.parent}">.. (up)</a>`;
-  }
-  if (!r.dirs.length) h += '<p class="muted" style="padding:6px">No subdirectories.</p>';
-  for (const d of r.dirs) {
-    const full = (r.path === "/" ? "" : r.path) + "/" + d;
-    h += `<a href="#" data-path="${full}">${d}/</a>`;
-  }
-  el.innerHTML = h;
-  el.querySelectorAll("a").forEach((a) => {
-    a.onclick = (e) => { e.preventDefault(); browseGoTo(a.dataset.path); };
-  });
-}
-
-function browseGo() { browseGoTo($("browsePathInput").value); }
-
-async function selectBrowsedFolder() {
-  try {
-    const r = await api("/api/reads/set-dir", { method: "POST", body: JSON.stringify({ path: BROWSE_PATH }) });
-    applyActiveReadsDir(r);
-    $("dirBrowser").style.display = "none";
-    banner("readsBanner", true, `Active reads directory set to ${r.host_reads_dir}.`);
-  } catch (e) { banner("readsBanner", false, e.message); }
-}
-
-async function resetReadsDir() {
-  try {
-    const r = await api("/api/reads/set-dir", { method: "POST", body: JSON.stringify({ path: null }) });
-    applyActiveReadsDir(r);
-    banner("readsBanner", true, `Active reads directory reset to ${r.host_reads_dir}.`);
-  } catch (e) { banner("readsBanner", false, e.message); }
-}
-
-// ---------------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------------
+// The local reads directory the helper scans/uploads from (on the user's machine).
+function readsLocalDir() { return ($("readsLocalDir").value || "").trim(); }
+
 function blankRun(group) {
   return {
     NAME: group.group, files: group.files, paired: group.paired,
@@ -1111,11 +1113,16 @@ async function loadReadSamples() {
 }
 
 async function scanReads() {
+  const dir = readsLocalDir();
+  if (!dir) { banner("readsBanner", false, "Enter the absolute path to your local reads directory."); return; }
+  if (!HELPER_OK && !(await detectHelper())) {
+    banner("readsBanner", false, "The local upload helper isn't running — start it, then re-check."); return;
+  }
   try {
-    const r = await api("/api/reads/scan", { method: "POST", body: JSON.stringify({}) });
+    const r = await helperApi("/api/scan", { method: "POST", body: JSON.stringify({ host_dir: dir }) });
     RUN_ROWS = r.groups.map(blankRun);
     renderRunTable();
-    banner("readsBanner", true, `Found ${r.count} read group(s) in ${r.host_reads_dir}.`);
+    banner("readsBanner", true, `Found ${r.count} read group(s) in ${r.host_dir}.`);
     syncPairingsToExperimentDh();
     scheduleSave();
   } catch (e) { banner("readsBanner", false, e.message); }
@@ -1254,53 +1261,120 @@ function mergeExperimentMetadata(runRows) {
   });
 }
 
+function appendReadsLog(text) {
+  const log = $("readsLog");
+  log.textContent += text + "\n";
+  log.scrollTop = log.scrollHeight;
+}
+
+// Reads upload is browser-bridged:
+//   1. ask the server for a PLAN (which runs to upload vs. skip + manifest text),
+//   2. for each upload, hand the manifest to the LOCAL HELPER which runs
+//      webin-cli against the local files and streams the log,
+//   3. relay each outcome back to the server (/api/reads/result) to update the
+//      resume ledger. Reads never pass through the server.
 async function submitReads(doSubmit) {
   $("readsLog").textContent = "";
   $("readsResults").innerHTML = "";
+  const sessionId = SESSION ? SESSION.id : null;
+  let runs;
   try {
-    const runs = mergeExperimentMetadata(RUN_ROWS);
-    const { job_id } = await api("/api/reads/submit", { method: "POST", body: JSON.stringify({
-      runs, test: TEST, submit: doSubmit,
-      session_id: SESSION ? SESSION.id : null, force_reupload: $("forceReupload").checked,
+    runs = mergeExperimentMetadata(RUN_ROWS);
+  } catch (e) { banner("submitReadsBanner", false, e.message); return; }
+
+  if (!HELPER_OK && !(await detectHelper())) {
+    banner("submitReadsBanner", false, "The local upload helper isn't running — start it, then re-check."); return;
+  }
+  const dir = readsLocalDir();
+  if (!dir) { banner("submitReadsBanner", false, "Set your local reads directory in step 1."); return; }
+
+  try {
+    const { plan, warnings } = await api("/api/reads/plan", { method: "POST", body: JSON.stringify({
+      runs, test: TEST, session_id: sessionId, force_reupload: $("forceReupload").checked,
     }) });
-    streamReads(job_id);
+    (warnings || []).forEach((w) => appendReadsLog("WARNING: " + w));
+
+    const results = [];
+    for (const entry of plan) {
+      if (entry.action === "skip") {
+        appendReadsLog(`=== ${entry.name} === SKIP (${entry.reason})`);
+        results.push(entry);
+        recordLedger(entry);
+        continue;
+      }
+      appendReadsLog(`=== ${entry.name} === uploading via local helper…`);
+      const result = await uploadOneViaHelper(entry, dir, doSubmit, sessionId);
+      results.push(result);
+      recordLedger(result);
+      renderRunTable();
+    }
+
+    const ok = results.every((r) => r.success !== false);
+    const skipped = results.filter((r) => r.skipped).length;
+    banner("submitReadsBanner", ok,
+      ok ? `Done: ${results.length} run(s)${skipped ? `, ${skipped} skipped` : ""}${doSubmit ? "" : " (validate only)"}.`
+         : "Some runs failed — see results.");
+    renderTable("readsResults", results);
+    renderRunTable();
+    saveSessionNow();
   } catch (e) { banner("submitReadsBanner", false, e.message); }
 }
-function streamReads(jobId) {
-  const log = $("readsLog");
-  const results = [];
-  const es = new EventSource(`/api/reads/stream/${jobId}`);
-  es.onmessage = (ev) => {
-    const m = JSON.parse(ev.data);
-    if (m.error) { banner("submitReadsBanner", false, m.error); es.close(); return; }
-    if (m.line != null) { log.textContent += m.line + "\n"; log.scrollTop = log.scrollHeight; }
-    if (m.result) {
-      results.push(m.result);
-      // Update the per-run resume ledger from each result as it lands.
-      const r = m.result;
-      if (r.name) {
-        READS_RUNS[r.name] = {
-          run_name: r.name,
-          status: r.skipped ? (r.reason === "already_in_ena" ? "already_in_ena" : "done")
-            : (r.success ? "done" : "failed"),
-          experiment_accession: r.experiment_accession || "",
-          run_accession: r.run_accession || "",
-        };
+
+// Run one upload on the local helper and relay the outcome back to the server.
+function uploadOneViaHelper(entry, inputDir, doSubmit, sessionId) {
+  return new Promise(async (resolve) => {
+    let job;
+    try {
+      job = await helperApi("/api/submit", { method: "POST", body: JSON.stringify({
+        input_host_dir: inputDir, manifest_filename: entry.manifest_filename,
+        manifest_text: entry.manifest_text, submit: doSubmit, test: TEST,
+      }) });
+    } catch (e) {
+      appendReadsLog(`ERROR (${entry.name}): ${e.message}`);
+      resolve({ name: entry.name, alias: entry.alias, sample: entry.sample, study: entry.study, success: false, exit_code: 1 });
+      return;
+    }
+    const es = new EventSource(`${HELPER_BASE}/api/stream/${job.job_id}`);
+    es.onmessage = async (ev) => {
+      const m = JSON.parse(ev.data);
+      if (m.line != null) appendReadsLog(m.line);
+      if (m.done) {
+        es.close();
+        // Relay the outcome to the server to update the ledger.
+        let result;
+        try {
+          const r = await api("/api/reads/result", { method: "POST", body: JSON.stringify({
+            session_id: sessionId, name: entry.name, alias: entry.alias, stable_alias: entry.stable_alias,
+            exit_code: m.exit_code, log: m.log || "", sample: entry.sample, study: entry.study,
+            experiment_accession: m.experiment_accession, run_accession: m.run_accession,
+          }) });
+          result = r.result;
+        } catch (e) {
+          appendReadsLog(`ERROR recording result (${entry.name}): ${e.message}`);
+          result = { name: entry.name, alias: entry.alias, sample: entry.sample, study: entry.study,
+            success: m.exit_code === 0, exit_code: m.exit_code,
+            experiment_accession: m.experiment_accession || "", run_accession: m.run_accession || "" };
+        }
+        resolve(result);
       }
-    }
-    if (m.done) {
-      const ok = m.results.every((r) => r.success);
-      const skipped = m.results.filter((r) => r.skipped).length;
-      banner("submitReadsBanner", ok,
-        ok ? `Done: ${m.results.length} run(s)${skipped ? `, ${skipped} skipped (already in ENA)` : ""}.`
-           : "Some runs failed — see results.");
-      renderTable("readsResults", m.results);
-      renderRunTable();   // refresh per-row status column
-      saveSessionNow();   // persist log + results + ledger immediately
+    };
+    es.onerror = () => {
       es.close();
-    }
+      appendReadsLog(`ERROR (${entry.name}): lost connection to the local helper.`);
+      resolve({ name: entry.name, alias: entry.alias, sample: entry.sample, study: entry.study, success: false, exit_code: 1 });
+    };
+  });
+}
+
+function recordLedger(r) {
+  if (!r || !r.name) return;
+  READS_RUNS[r.name] = {
+    run_name: r.name,
+    status: r.skipped ? (r.reason === "already_in_ena" ? "already_in_ena" : "done")
+      : (r.success ? "done" : "failed"),
+    experiment_accession: r.experiment_accession || "",
+    run_accession: r.run_accession || "",
   };
-  es.onerror = () => { es.close(); };
 }
 
 // ---------------------------------------------------------------------------
@@ -1384,21 +1458,87 @@ async function recAction(action, accession) {
 }
 
 // ---------------------------------------------------------------------------
+// Authentication + account management
+// ---------------------------------------------------------------------------
+async function doLogin() {
+  try {
+    await api("/api/auth/login", { method: "POST", body: JSON.stringify({
+      username: $("loginUsername").value, password: $("loginPassword").value,
+    }) });
+    $("loginModal").classList.remove("show");
+    $("loginPassword").value = "";
+    $("loginBanner").className = "banner";
+    await startApp();
+  } catch (e) { banner("loginBanner", false, e.message); }
+}
+async function doLogout() {
+  try { await api("/api/auth/logout", { method: "POST" }); } catch (_) {}
+  location.reload();
+}
+async function loadUsers() {
+  try { renderUserList(await api("/api/admin/users")); }
+  catch (e) { banner("adminBanner", false, e.message); }
+}
+function renderUserList(users) {
+  const el = $("adminUserList");
+  if (!users.length) { el.innerHTML = '<p class="muted" style="padding:10px">No users.</p>'; return; }
+  let h = "<table><thead><tr><th>username</th><th>role</th><th>last login</th><th>actions</th></tr></thead><tbody>";
+  users.forEach((u) => {
+    const last = u.last_login ? u.last_login.slice(0, 19).replace("T", " ") : "—";
+    h += `<tr><td>${u.username}</td><td>${u.is_admin ? "admin" : "user"}</td><td>${last}</td><td>`
+      + `<button class="btn secondary" style="padding:3px 8px" onclick="resetUserPassword(${u.id}, ${JSON.stringify(u.username)})">reset password</button> `
+      + `<button class="btn danger" style="padding:3px 8px" onclick="deleteUser(${u.id}, ${JSON.stringify(u.username)})">delete</button>`
+      + `</td></tr>`;
+  });
+  el.innerHTML = h + "</tbody></table>";
+}
+async function createUser() {
+  try {
+    await api("/api/admin/users", { method: "POST", body: JSON.stringify({
+      username: $("newUserName").value, password: $("newUserPassword").value, is_admin: $("newUserAdmin").checked,
+    }) });
+    $("newUserName").value = ""; $("newUserPassword").value = ""; $("newUserAdmin").checked = false;
+    banner("adminBanner", true, "User created.");
+    loadUsers();
+  } catch (e) { banner("adminBanner", false, e.message); }
+}
+async function deleteUser(id, name) {
+  if (!confirm(`Delete user "${name}"?`)) return;
+  try { await api(`/api/admin/users/${id}`, { method: "DELETE" }); banner("adminBanner", true, "User deleted."); loadUsers(); }
+  catch (e) { banner("adminBanner", false, e.message); }
+}
+async function resetUserPassword(id, name) {
+  const pw = prompt(`New password for "${name}":`);
+  if (!pw) return;
+  try { await api(`/api/admin/users/${id}/password`, { method: "POST", body: JSON.stringify({ password: pw }) }); banner("adminBanner", true, "Password updated."); }
+  catch (e) { banner("adminBanner", false, e.message); }
+}
+
+// ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 
 // Persist field edits (text inputs, selects, checkboxes) as the user types.
 // Credentials inputs are excluded — they are never part of session state.
 document.querySelector("main").addEventListener("input", (e) => {
-  if (e.target.id === "username" || e.target.id === "password" || e.target.id === "browsePathInput") return;
+  if (["username", "password", "readsLocalDir", "newUserName", "newUserPassword"].includes(e.target.id)) return;
   scheduleSave();
 });
 document.querySelector("main").addEventListener("change", (e) => {
-  if (e.target.id === "username" || e.target.id === "password") return;
+  if (["username", "password", "newUserName", "newUserPassword"].includes(e.target.id)) return;
   scheduleSave();
 });
 
 async function init() {
+  HEALTH = await api("/api/health");
+  if (HEALTH.deployment_mode === "hosted" && !HEALTH.authenticated) {
+    $("loginModal").classList.add("show");  // gate on login; startApp() runs after doLogin()
+    return;
+  }
+  await startApp();
+}
+
+async function startApp() {
   await refreshHealth();
   captureInitialDefaults();  // pristine blank-slate snapshot, used to reset between sessions
   initDhFrames();            // point both DH iframes at explicit ?template= paths
