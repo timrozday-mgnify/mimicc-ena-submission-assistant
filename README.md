@@ -397,8 +397,7 @@ server/
   static/              single-page UI (index.html, app.js) + DH bundle (dh/, volume-mounted)
 manage.py          Django management entrypoint (migrations)
 read-helper/       local reads upload helper (runs webin-cli on the user's machine)
-webin_cli_lib/     webin-cli Docker executor (from webin-cli-browser-assistant)
-dh_builder_lib/    mimicc-dh-builder Docker executor (mirrors webin_cli_lib)
+dh_builder_lib/    mimicc-dh-builder Docker executor
 scripts/
   vendor.sh              copy sibling repos and standalone linkml-lib into ./vendor
   fetch_ena_checklists.sh fetch the full set of public ENA sample-checklist XMLs

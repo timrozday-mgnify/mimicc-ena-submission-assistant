@@ -38,7 +38,6 @@ RUN pip install --no-cache-dir /linkml-lib && pip install --no-cache-dir -r requ
 # Vendored sibling code (populated by scripts/vendor.sh before building).
 COPY vendor/ vendor/
 # App code
-COPY webin_cli_lib/ webin_cli_lib/
 COPY dh_builder_lib/ dh_builder_lib/
 COPY server/ server/
 # Django ORM management entrypoint (migrations).

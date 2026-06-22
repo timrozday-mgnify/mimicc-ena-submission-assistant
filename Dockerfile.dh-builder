@@ -3,7 +3,7 @@
 # time. This lets a future "edit template" UI feature request a rebuild
 # without rebuilding the whole app image — see server/dh_builder_runner.py
 # and dh_builder_lib, which spawn this image as a sibling container the same
-# way webin_cli_lib spawns enasequence/webin-cli.
+# way the read-helper app spawns enasequence/webin-cli.
 #
 # Build:
 #   docker build -f Dockerfile.dh-builder \

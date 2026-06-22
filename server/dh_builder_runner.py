@@ -2,7 +2,7 @@
 
 Adds Docker-in-Docker path validation via the /hostroot mount and creates the
 schema/output directories on the host filesystem before invoking the core
-library. Mirrors webin_runner.py.
+library.
 """
 
 from __future__ import annotations
