@@ -39,6 +39,10 @@ services:
       # Submission sessions: SQLite registry (sessions.db) + per-session dirs
       # holding the full UI snapshot, the DataHarmonizer export and reads logs.
       - ${MIMICC_SESSIONS_DIR:-${HOME}/.mimicc-ena/sessions}:/sessions
+      # Schema library: saved/imported LinkML schemas the user can pick to
+      # back the sample/experiment DataHarmonizer grids (see /api/schemas).
+      # Seeded from the bundled vendor/schemas/ on first run.
+      - ${MIMICC_SCHEMAS_DIR:-${HOME}/.mimicc-ena/schemas}:/schemas
     environment:
       - HOST_HOME=${HOME}
       - HOST_LOGS_DIR=${HOME}/.mimicc-ena/logs
@@ -54,4 +58,27 @@ services:
       - HOST_DH_SCHEMA_DIR=${MIMICC_DH_SCHEMA_DIR:-${HOME}/.mimicc-ena/dh-schema}
       - DH_SCHEMA_CONTAINER_DIR=/dh-schema
       - SESSIONS_CONTAINER_DIR=/sessions
+      - SCHEMAS_CONTAINER_DIR=/schemas
+      # Browser-reachable URL of the dhtb sidecar below (the browser talks to
+      # it directly, not through this container) — see /api/health: dhtb_url.
+      - DHTB_URL=http://localhost:${MIMICC_DHTB_PORT:-8765}
+    restart: unless-stopped
+
+  # DataHarmonizer Template Builder: edit/preview LinkML schemas before
+  # selecting them via /api/schemas/select. Sibling service the main app
+  # embeds as an iframe (postMessage bridge); see server/static/app.js.
+  # Build it once with its own compose file in
+  # ../dataharmonizer-template-builder, or via `docker compose build dhtb`
+  # here if DHTB_DIR points at that checkout.
+  dhtb:
+    build:
+      context: ${DHTB_DIR:-../dataharmonizer-template-builder}
+      additional_contexts:
+        dataharmonizer-src: ${DATAHARMONIZER_DIR:-../DataHarmonizer}
+        linkml-lib: ${LINKML_LIB_DIR:-../linkml-lib}
+    container_name: mimicc-dhtb
+    ports:
+      - "127.0.0.1:${MIMICC_DHTB_PORT:-8765}:8765"
+    environment:
+      - DHTB_FRONTEND_CONFIG_JSON={"hostMode":"embedded","hostName":"MIMICC ENA Submission Assistant","showImportButton":false,"showExportButton":false,"showGenerateButton":true,"showPreviewButton":true,"allowExampleSchema":false}
     restart: unless-stopped

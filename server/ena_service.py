@@ -15,15 +15,10 @@ environment or disk.
 from __future__ import annotations
 
 import io
-import json
 import logging
-import re
-import tempfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import _bootstrap  # side effect: extends sys.path to the vendored sibling code
@@ -51,21 +46,6 @@ _REPORT_METHODS = {
 }
 
 _ACTIONS = {"cancel", "suppress", "release", "hold", "kill"}
-_INTEGER_RE = re.compile(r"[+-]?[0-9]+")
-_NUMBER_WITH_UNIT_RE = re.compile(
-    r"^(?P<number>[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[Ee][+-]?[0-9]+)?)"
-    r"(?:\s+(?P<unit>\S.+))?$"
-)
-_UNIT_CONVERSIONS = {
-    ("mL", "L"): Decimal("0.001"),
-    ("ml", "L"): Decimal("0.001"),
-}
-
-
-@dataclass(frozen=True)
-class UnitRule:
-    allowed_units: tuple[str, ...]
-    default_unit: str | None = None
 
 
 def _ena_api():
@@ -78,130 +58,6 @@ def _common():
     import ena_common as common  # type: ignore
 
     return common
-
-
-def _as_list(value: object) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [str(v).strip() for v in value if str(v).strip()]
-    return [part.strip() for part in str(value).split(",") if part.strip()]
-
-
-def _units_from_comments(comments: object) -> list[str]:
-    result: list[str] = []
-    seen_units = False
-    for comment in _as_list(comments):
-        if comment.startswith("Allowed units:"):
-            seen_units = True
-            result.extend(_as_list(comment.removeprefix("Allowed units:")))
-        elif seen_units and len(comment) <= 30 and "." not in comment:
-            result.append(comment)
-    return result
-
-
-def _sample_unit_rules(schema: dict[str, Any] | None = None) -> dict[str, UnitRule]:
-    """Return prepared sample field name to allowed/default unit rules."""
-    if schema is None:
-        from linkml_lib import io as linkml_io  # type: ignore
-
-        schema = linkml_io.load_yaml(_bootstrap.schema_path())
-
-    rules: dict[str, UnitRule] = {}
-    for slot_name, slot in (schema.get("slots") or {}).items():
-        annotations = slot.get("annotations") or {}
-        field_name = annotations.get("id") or slot.get("title") or slot_name
-        allowed = _as_list(annotations.get("ena_allowed_units"))
-        if not allowed:
-            allowed = _units_from_comments(slot.get("comments"))
-        default_unit = annotations.get("mimicc_default_unit") or annotations.get("default_unit")
-        if allowed or default_unit:
-            rules[str(field_name)] = UnitRule(tuple(dict.fromkeys(allowed)), default_unit)
-    return rules
-
-
-def _format_decimal(value: Decimal) -> str:
-    text = format(value.normalize(), "f")
-    if "." in text:
-        text = text.rstrip("0").rstrip(".")
-    return text or "0"
-
-
-def _converted_unit_value(number: str, unit: str, allowed_units: tuple[str, ...]) -> tuple[str, str] | None:
-    for target_unit in allowed_units:
-        factor = _UNIT_CONVERSIONS.get((unit, target_unit))
-        if factor is None:
-            continue
-        try:
-            converted = Decimal(number) * factor
-        except InvalidOperation as exc:
-            raise ValueError(f"Could not parse numeric value {number!r}") from exc
-        return _format_decimal(converted), target_unit
-    return None
-
-
-def _normalise_unit_value(field: str, value: str, rule: UnitRule) -> tuple[str, str | None]:
-    match = _NUMBER_WITH_UNIT_RE.match(value)
-    if match is None:
-        return value, None
-
-    number = match.group("number")
-    unit = match.group("unit")
-    if unit:
-        if unit in rule.allowed_units:
-            return number, unit
-        converted = _converted_unit_value(number, unit, rule.allowed_units)
-        if converted is not None:
-            return converted
-        allowed = ", ".join(rule.allowed_units) or "<none configured>"
-        raise ValueError(f"{field!r} uses unsupported unit {unit!r}; allowed units: {allowed}")
-
-    default_unit = rule.default_unit or (rule.allowed_units[0] if len(rule.allowed_units) == 1 else None)
-    if default_unit is None:
-        allowed = ", ".join(rule.allowed_units)
-        raise ValueError(f"{field!r} value {value!r} needs an explicit unit; allowed units: {allowed}")
-    if rule.allowed_units and default_unit not in rule.allowed_units:
-        allowed = ", ".join(rule.allowed_units)
-        raise ValueError(f"{field!r} default unit {default_unit!r} is not in allowed units: {allowed}")
-    return value, default_unit
-
-
-def _normalise_sample_records_for_submission(
-    records: list[dict[str, Any]],
-    unit_rules: dict[str, UnitRule],
-) -> tuple[list[dict[str, Any]], dict[str, str]]:
-    """Return records and a field-wide unit map ready for XML submission."""
-    logger = logging.getLogger("ena_submit.sample")
-    normalised: list[dict[str, Any]] = []
-    slot_to_unit: dict[str, str] = {}
-
-    for record in records:
-        out: dict[str, Any] = {}
-        for field, raw_value in record.items():
-            value = str(raw_value).strip() if raw_value is not None else ""
-            if field == "library size" and value and _INTEGER_RE.fullmatch(value) is None:
-                logger.info("Dropping optional field 'library size' with non-integer value: %s", value)
-                continue
-
-            rule = unit_rules.get(field)
-            if rule is None or not value:
-                out[field] = raw_value
-                continue
-
-            normalised_value, unit = _normalise_unit_value(field, value, rule)
-            out[field] = normalised_value
-            if unit is None:
-                continue
-            existing = slot_to_unit.get(field)
-            if existing is not None and existing != unit:
-                raise ValueError(f"{field!r} resolves to conflicting units: {existing!r}, {unit!r}")
-            slot_to_unit[field] = unit
-        normalised.append(out)
-
-    if slot_to_unit:
-        fields = ", ".join(f"{field}={unit}" for field, unit in sorted(slot_to_unit.items()))
-        logger.info("Applied schema units to sample attributes: %s", fields)
-    return normalised, slot_to_unit
 
 
 @contextmanager
@@ -258,23 +114,6 @@ def _filter_by_status(rows: list[dict[str, Any]], status: str) -> list[dict[str,
     return [r for r in rows if (r.get("status") or "").upper() == target]
 
 
-def _enrich_runs_with_experiments(
-    runs: list[dict[str, Any]],
-    experiments: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Attach experiment-derived study/sample accessions to run report rows."""
-    experiments_by_accession = {exp.get("accession"): exp for exp in experiments if exp.get("accession")}
-    enriched: list[dict[str, Any]] = []
-    for run in runs:
-        row = dict(run)
-        experiment = experiments_by_accession.get(row.get("experiment_accession"))
-        if experiment:
-            row["study_accession"] = row.get("study_accession") or experiment.get("study_accession", "")
-            row["sample_accession"] = row.get("sample_accession") or experiment.get("sample_accession", "")
-        enriched.append(row)
-    return enriched
-
-
 def list_records(
     creds: Credentials,
     entity: str,
@@ -288,10 +127,9 @@ def list_records(
     if method is None:
         raise ValueError(f"Unknown entity {entity!r}; expected one of {', '.join(_REPORT_METHODS)}")
     with webin_client(creds, test) as client:
+        # list_runs() already joins against list_experiments() to fill in
+        # study_accession/sample_accession when the run's own report omits them.
         rows = [r.model_dump() for r in getattr(client.reports, method)(max_results=max_results)]
-        if entity == "runs":
-            experiments = [r.model_dump() for r in client.reports.list_experiments(max_results=max_results)]
-            rows = _enrich_runs_with_experiments(rows, experiments)
     if entity != "files":
         rows = _filter_by_status(rows, status)
     return rows
@@ -304,38 +142,14 @@ def lookup_existing_runs(
     test: bool,
     max_results: int = 5000,
 ) -> dict[str, dict[str, str]]:
-    """Find runs already in ENA by their experiment alias.
-
-    A reads submission registers an experiment (carrying the alias we control)
-    plus a run. To detect "is this run already submitted?" on a resume we look
-    up the experiment alias and map it to both accessions. Returns
-    ``{alias: {"experiment_accession": ..., "run_accession": ...}}`` for the
-    aliases that exist. Mirrors the alias-matching approach in
-    ``ena_common.find_duplicates_by_alias_title`` used for studies/samples.
-    """
+    """Find runs already in ENA by their experiment alias (thin re-export — see
+    ``ReportsProxy.find_runs_by_experiment_alias`` for the actual lookup,
+    used by reads-submission resumability to detect "is this run already
+    submitted?" on a resume)."""
     if not aliases:
         return {}
     with webin_client(creds, test) as client:
-        experiments = [r.model_dump() for r in client.reports.list_experiments(max_results=max_results)]
-        runs = [r.model_dump() for r in client.reports.list_runs(max_results=max_results)]
-
-    runs_by_experiment: dict[str, str] = {}
-    for run in runs:
-        exp_acc = run.get("experiment_accession")
-        run_acc = run.get("accession")
-        if exp_acc and run_acc and exp_acc not in runs_by_experiment:
-            runs_by_experiment[exp_acc] = run_acc
-
-    found: dict[str, dict[str, str]] = {}
-    for exp in experiments:
-        alias = exp.get("alias")
-        exp_acc = exp.get("accession")
-        if alias in aliases and exp_acc:
-            found[alias] = {
-                "experiment_accession": exp_acc,
-                "run_accession": runs_by_experiment.get(exp_acc, ""),
-            }
-    return found
+        return client.reports.find_runs_by_experiment_alias(aliases, max_results=max_results)
 
 
 # ---------------------------------------------------------------------------
@@ -410,6 +224,8 @@ def submit_samples(
 ) -> dict[str, Any]:
     """Create (ADD) or modify (MODIFY) samples. Returns {success, accessions}."""
     import submit_sample  # type: ignore
+    from linkml_lib import io as linkml_io  # type: ignore
+    from linkml_lib import schema as linkml_schema  # type: ignore
 
     common = _common()
     with _capture_ena_logs() as get_logs:
@@ -418,7 +234,7 @@ def submit_samples(
                 common.validate_hold_until(hold_until)
             env_label = "TEST" if test else "PRODUCTION"
             xsd = _bootstrap.xsd_dir()
-            unit_rules = _sample_unit_rules()
+            unit_rules = linkml_schema.unit_rules(linkml_io.load_yaml(_bootstrap.schema_path()))
 
             with webin_client(creds, test) as client:
                 if modify:
@@ -439,14 +255,13 @@ def submit_samples(
                 else:
                     action, batch = "ADD", records
 
-                batch, slot_to_unit = _normalise_sample_records_for_submission(batch, unit_rules)
                 success, accessions = submit_sample.submit_batch(
                     batch,
                     action,
                     xsd=xsd,
                     hold_until=hold_until,
                     checklist_id=checklist,
-                    slot_to_unit=slot_to_unit,
+                    unit_rules=unit_rules,
                     client=client,
                     env_label=env_label,
                 )
@@ -468,36 +283,27 @@ def prepare_samples(dh_export: dict[str, Any], *, where: str | None = DEFAULT_SA
     """Filter a DataHarmonizer export to sample fields and rename to ENA field names.
 
     Mirrors ``ena_cli.sample_prepare``: ``dh_data.filter_columns`` then
-    ``prepare_dh_output.prepare`` (which works on a file path, so we shuttle
-    through a temp file). Returns the full ``Container``-wrapped dict.
+    ``prepare_dh_output.prepare_data`` (the pure in-memory variant — no
+    temp-file round trip needed). Returns the full ``Container``-wrapped dict.
     """
     import prepare_dh_output  # type: ignore
     from linkml_lib import dh_data  # type: ignore
     from linkml_lib import io as linkml_io  # type: ignore
 
-    schema_file = _bootstrap.schema_path()
-    schema = linkml_io.load_yaml(schema_file)
+    schema = linkml_io.load_yaml(_bootstrap.schema_path())
 
     data = dh_export
     if where:
         data = dh_data.filter_columns(data, schema, where)
 
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as tmp:
-        json.dump(data, tmp)
-        tmp_path = Path(tmp.name)
-    try:
-        return prepare_dh_output.prepare(tmp_path, schema_file)
-    finally:
-        tmp_path.unlink(missing_ok=True)
+    return prepare_dh_output.prepare_data(data, schema)
 
 
 def records_from_container(prepared: dict[str, Any]) -> list[dict[str, Any]]:
-    """Pull the record list out of a prepared ``Container`` export."""
-    container = prepared.get("Container", {})
-    for value in container.values():
-        if isinstance(value, list):
-            return value
-    return []
+    """Pull the record list out of a prepared ``Container`` export (thin
+    re-export — see ``ena_common.extract_records_from_json`` for the
+    canonical unwrap, shared with ``submit_sample``/``prepare_dh_output``)."""
+    return _common().extract_records_from_json(prepared) or []
 
 
 # ---------------------------------------------------------------------------

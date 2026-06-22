@@ -19,6 +19,7 @@ try:
     import _bootstrap  # noqa: E402
 
     _bootstrap.schema_path()
+    import ena_common  # noqa: F401,E402
     import prepare_dh_output  # noqa: F401,E402
     import submit_sample  # noqa: F401,E402
 except Exception:  # pragma: no cover - environment without vendored scripts/schema
@@ -78,12 +79,13 @@ def test_prepared_records_emit_schema_units_in_sample_xml():
             ]
         }
     }
+    from linkml_lib import io as linkml_io
+    from linkml_lib import schema as linkml_schema
+
     prepared = ena_service.prepare_samples(export, where=ena_service.DEFAULT_SAMPLE_FILTER)
     records = ena_service.records_from_container(prepared)
-    records, slot_to_unit = ena_service._normalise_sample_records_for_submission(  # noqa: SLF001
-        records,
-        ena_service._sample_unit_rules(),  # noqa: SLF001
-    )
+    unit_rules = linkml_schema.unit_rules(linkml_io.load_yaml(_bootstrap.schema_path()))
+    records, slot_to_unit = ena_common.normalise_sample_records(records, unit_rules)
 
     root = ET.fromstring(
         submit_sample.build_manifest(

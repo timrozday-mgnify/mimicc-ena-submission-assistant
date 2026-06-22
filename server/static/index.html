@@ -16,6 +16,10 @@
     --btn2-bg:#e1e4e8; --btn2-fg:#1f2328; --code-bg:#eef1f4;
   }
   * { box-sizing:border-box; }
+  /* Prevent a touchpad's horizontal side-scroll from being interpreted as a
+     swipe-back/forward navigation gesture when it overscrolls past an edge
+     (e.g. while side-scrolling a wide table). */
+  html, body { overscroll-behavior-x: none; }
   body { margin:0; font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--fg); }
   header { display:flex; align-items:center; gap:16px; padding:10px 18px; background:var(--panel); border-bottom:1px solid var(--line); }
   header h1 { font-size:16px; margin:0; flex:1; }
@@ -60,11 +64,18 @@
   .banner { padding:10px 12px; border-radius:6px; margin-top:10px; font-weight:600; display:none; }
   .banner.ok { background:#10301a; color:#5fd97a; display:block; }
   .banner.bad { background:#301013; color:#ff7b72; display:block; }
+  .banner.warn { background:#3b2f10; color:#e3b341; display:block; }
   .muted { color:var(--muted); }
   .tag { font-size:11px; padding:1px 6px; border-radius:8px; background:var(--btn2-bg); color:var(--btn2-fg); }
   .tag.high { background:#10301a; color:#5fd97a; }
   .dh-embed-wrap { width:100%; height:850px; min-height:200px; max-height:90vh; resize:vertical; overflow:auto;
             border:1px solid var(--line); border-radius:6px; }
+  .panel:not(.maximized) #schemaEditorWrap { height:700px; }
+  /* schemaEditorWrap has extra always-visible siblings (the save/export row,
+     banner) below it in .panel-body, unlike the other dh-embed-wrap panels —
+     height:100% would be used as a flex-basis and get shrunk to share space
+     with those siblings, so grow into the leftover space instead. */
+  .panel.maximized #schemaEditorWrap { height:auto; flex:1 1 auto; min-height:0; }
   .dh-embed-frame { width:100%; height:100%; border:none; display:block; background:#fff; }
   .inline { display:flex; align-items:center; gap:6px; }
   .inline input[type=checkbox] { width:auto; }
@@ -150,6 +161,7 @@
   <button data-tab="studies">Studies</button>
   <button data-tab="samples">Samples</button>
   <button data-tab="reads">Reads</button>
+  <button data-tab="schema">Schema</button>
   <button data-tab="records">Records</button>
 </nav>
 <main>
@@ -217,6 +229,10 @@
         </div>
       </div>
       <div class="panel-body">
+        <div class="row" style="margin-bottom:10px">
+          <div><label>Schema</label><select id="sampleSchemaSelect"></select></div>
+          <div style="align-self:flex-end"><button class="btn secondary" onclick="applySchemaSelection('sample')">Use this schema</button></div>
+        </div>
         <div class="dh-embed-wrap" id="dhWrap"><iframe class="dh-embed-frame" id="dhFrame"></iframe></div>
         <p class="muted" id="dhMissing" style="display:none">DataHarmonizer bundle not built. Run
           <code>bash scripts/build_dh_template.sh</code>, or just export from a standalone DataHarmonizer and upload the JSON below.</p>
@@ -317,11 +333,16 @@
         </div>
       </div>
       <div class="panel-body">
+        <div class="row" style="margin-bottom:10px">
+          <div><label>Schema</label><select id="expSchemaSelect"></select></div>
+          <div style="align-self:flex-end"><button class="btn secondary" onclick="applySchemaSelection('experiment')">Use this schema</button></div>
+        </div>
         <div class="dh-embed-wrap" id="expDhWrap"><iframe class="dh-embed-frame" id="expDhFrame"></iframe></div>
         <p class="muted" id="expDhMissing" style="display:none">Experiment metadata schema not built yet — see README
           "Experiment metadata schema". Rows are kept in sync with the pairing table above
           (<code id="EXP_KEY_TITLE_LABEL"></code>/<code id="EXP_SAMPLE_TITLE_LABEL"></code> columns); fill in the rest
           (platform, instrument, library source/selection/strategy, …) here before submitting.</p>
+        <p class="banner" id="expSchemaWarning"></p>
       </div>
     </div>
     <div class="panel">
@@ -337,6 +358,62 @@
       <div class="banner" id="submitReadsBanner"></div>
       <div class="log" id="readsLog"></div>
       <div class="scroll" id="readsResults"></div>
+    </div>
+  </section>
+
+  <!-- SCHEMA -->
+  <section class="tab" id="tab-schema">
+    <div class="panel">
+      <h2>Schema library</h2>
+      <p class="muted">Saved/imported LinkML schemas, persisted alongside the other backend files. Pick one
+        on the Samples or Reads tab to back that grid, or supply your own from disk below.</p>
+      <div class="scroll" id="schemaLibraryList"></div>
+      <div class="row" style="margin-top:12px">
+        <div><label>Supply your own schema file (.yaml, .xml, .xsd)</label>
+          <input type="file" id="schemaFilePicker" accept=".yaml,.yml,.xml,.xsd" onchange="importSchemaFile()"></div>
+      </div>
+      <div class="banner" id="schemaLibraryBanner"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Build a new schema</h2>
+      <p class="muted">Import fields from bundled ENA sample-checklist XML, ENA/SRA XSD, and/or an existing
+        saved schema. Selected sources are merged (earlier selections win on conflicting fields) and loaded
+        into the editor below.</p>
+      <div class="row">
+        <div><label>ENA checklists (XML)</label><select id="schemaImportChecklists" multiple style="height:140px"></select>
+          <button class="btn secondary" style="margin-top:6px; padding:3px 8px" type="button" onclick="clearSchemaMultiSelect('schemaImportChecklists')">Clear selection</button></div>
+        <div><label>ENA/SRA XSD</label><select id="schemaImportXsd" multiple style="height:140px"></select>
+          <button class="btn secondary" style="margin-top:6px; padding:3px 8px" type="button" onclick="clearSchemaMultiSelect('schemaImportXsd')">Clear selection</button></div>
+        <div><label>Existing saved schemas</label><select id="schemaImportExisting" multiple style="height:140px"></select>
+          <button class="btn secondary" style="margin-top:6px; padding:3px 8px" type="button" onclick="clearSchemaMultiSelect('schemaImportExisting')">Clear selection</button></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div><label>Name for the merged schema</label><input id="schemaImportName" placeholder="e.g. my_custom_checklist"></div>
+      </div>
+      <div class="actions"><button class="btn" onclick="buildImportedSchema()">Build &amp; open in editor</button></div>
+      <div class="banner" id="schemaImportBanner"></div>
+    </div>
+
+    <div class="panel maximizable" id="schemaEditorPanel">
+      <div class="panel-head">
+        <h2>Edit / preview schema</h2>
+        <button class="icon-btn maximize-toggle-btn" type="button" onclick="togglePanelMax('schemaEditorPanel')" title="Maximize panel" aria-label="Maximize panel">⛶</button>
+      </div>
+      <div class="panel-body">
+        <div class="dh-embed-wrap" id="schemaEditorWrap"><iframe class="dh-embed-frame" id="schemaEditorFrame"></iframe></div>
+        <p class="muted" id="schemaEditorMissing" style="display:none">The dataharmonizer-template-builder sidecar isn't
+          reachable — start it (the <code>dhtb</code> service in docker-compose.yml) to edit schemas. You can still
+          select and save schemas without it.</p>
+        <div class="row" style="margin-top:10px">
+          <div><label>Save as / export filename</label><input id="schemaSaveName" placeholder="e.g. my_custom_checklist"></div>
+          <div style="align-self:flex-end" class="inline">
+            <button class="btn" onclick="saveEditorSchema()">Save to library</button>
+            <button class="btn secondary" onclick="exportEditorSchema()">Export .yaml</button>
+          </div>
+        </div>
+        <div class="banner" id="schemaEditorBanner"></div>
+      </div>
     </div>
   </section>
 

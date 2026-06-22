@@ -6,6 +6,11 @@ server/static/dh/
 .env
 .DS_Store
 
+# Local-dev fallback for the schema library when SCHEMAS_CONTAINER_DIR isn't
+# set (see server/_bootstrap.py:schemas_dir) — production uses the /schemas
+# bind mount instead.
+.local/
+
 # Test/tooling artifacts
 .pytest_cache/
 .ruff_cache/
