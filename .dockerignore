@@ -1,0 +1,7 @@
+# server/static/dh is a Docker named-volume mount point (see docker-compose.yml,
+# /app/server/static/dh). If it has any content in the image, Docker seeds a
+# fresh volume from that content on first mount, which makes
+# scripts/server_entrypoint.sh's "is the volume empty?" check think it's
+# already seeded and skip copying in the real dh-default bundle. Keep this
+# path out of the image entirely so new volumes start genuinely empty.
+server/static/dh

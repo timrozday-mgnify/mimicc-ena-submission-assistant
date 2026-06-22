@@ -1,0 +1,34 @@
+version: "3"
+
+# DOCKER_DEFAULT_PLATFORM=linux/amd64 is set globally in this user's shell
+# (for other projects), but this project's docker-compose.yml pins
+# platform: linux/arm64 per service so builds run natively on Apple Silicon
+# instead of crashing under QEMU emulation. Compose refuses to start when the
+# global env var conflicts with an explicit per-service platform, so every
+# compose invocation here needs DOCKER_DEFAULT_PLATFORM unset. These tasks do
+# that for you instead of requiring `env -u DOCKER_DEFAULT_PLATFORM ...` by hand.
+tasks:
+  up:
+    desc: Start the stack, building images as needed
+    cmds:
+      - unset DOCKER_DEFAULT_PLATFORM && docker compose up --build {{.CLI_ARGS}}
+
+  up:local:
+    desc: Start the stack including the local-only read-helper profile
+    cmds:
+      - unset DOCKER_DEFAULT_PLATFORM && COMPOSE_PROFILES=local docker compose up --build {{.CLI_ARGS}}
+
+  build:
+    desc: Build images without starting containers
+    cmds:
+      - unset DOCKER_DEFAULT_PLATFORM && docker compose build {{.CLI_ARGS}}
+
+  down:
+    desc: Stop the stack
+    cmds:
+      - unset DOCKER_DEFAULT_PLATFORM && docker compose down {{.CLI_ARGS}}
+
+  logs:
+    desc: Tail logs for all (or a named) service
+    cmds:
+      - docker compose logs -f {{.CLI_ARGS}}
