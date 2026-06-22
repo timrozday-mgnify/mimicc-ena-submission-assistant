@@ -118,8 +118,48 @@ restarting the server or rebuilding the image; the result is immediately
 served at `/dh`. This spawns the `mimicc-dh-builder` sibling container
 (build it once with `docker build -f Dockerfile.dh-builder --build-context
 dataharmonizer-src=../DataHarmonizer -t mimicc-dh-builder .`), mirroring how
-reads submission spawns `enasequence/webin-cli`. There's no UI for this yet —
-it's scaffolding for a future in-app template editor.
+reads submission spawns `enasequence/webin-cli`.
+
+### Schema library (Schema tab)
+
+The **Schema** tab lets you build, edit, save, and select LinkML schemas for the
+sample/experiment grids, instead of being stuck with the two prebuilt MIMICC
+templates:
+
+- **Library** — schemas saved under `~/.mimicc-ena/schemas` (`/schemas` in the
+  container; `SCHEMAS_CONTAINER_DIR`), seeded on first use from the bundled
+  `vendor/schemas/*.yaml`. Each row can be edited, used for the sample or
+  experiment grid, exported as a `.yaml` file, or deleted. You can also supply
+  your own schema/checklist/XSD file from disk via the file picker.
+- **Build** — merges fields from bundled ENA sample checklists (`vendor/assets/
+  ena_schema/*.xml` and `.../checklists/*.xml`, fetched with
+  `scripts/fetch_ena_checklists.sh`), ENA/SRA XSDs (`vendor/assets/ena_schema/
+  *.xsd`), and/or existing saved schemas (`POST /api/schemas/import`, backed by
+  `linkml_lib.pipeline.build` — the same XML/XSD→LinkML converters used
+  elsewhere in this app). Earlier-selected sources win on conflicting fields.
+- **Edit** — the merged/loaded schema opens in an embedded
+  [`dataharmonizer-template-builder`](../dataharmonizer-template-builder)
+  sidecar (the `dhtb` service in `docker-compose.yml`; build it from a sibling
+  checkout, or set `DHTB_DIR`), via its `postMessage` bridge
+  (`dhtb.loadYaml` / `dhtb.exportYaml` / `dhtb.ready` / `dhtb.exported`/
+  `dhtb.error` — see its own `docs/integration-contract.md`). Saving writes the
+  exported YAML to the library (`POST /api/schemas`).
+- **Select** — choosing a schema for the sample or experiment grid
+  (`POST /api/schemas/select {role, schema_id}`) compiles it in-process
+  (`linkml_lib.dataharmonizer_compile`, the same pure-Python compiler DH's own
+  `script/linkml.py` performs) and overwrites that grid's *existing* template
+  folder's `schema.json` (`mimicc/` or `mimicc_experiment/` under
+  `server/static/dh/templates/`) plus `dh-template-registry.json`. Because
+  DataHarmonizer fetches `schema.json` over HTTP at runtime
+  (`lib/utils/templates.js: fetchSchema`), this takes effect on the next
+  iframe reload — **no DataHarmonizer bundle rebuild needed**. (This is
+  different from the on-demand rebuild above, which recompiles the whole
+  Node/Yarn bundle; schema selection only swaps the served JSON for an
+  already-registered template folder.)
+- **Experiment schema caveat**: selecting an experiment schema that doesn't use
+  the column-title contract below (`Experiment name` / `Sample alias`) breaks
+  read-pairing sync — the Reads tab shows a non-blocking warning when this is
+  detected.
 
 #### Export integration (requires a patched DataHarmonizer fork)
 
@@ -295,12 +335,14 @@ server/
   session_store.py     submission sessions: SQLite registry + reads ledger + per-session files
   webin_runner.py      Docker-in-Docker adapter (from webin-cli-browser-assistant)
   dh_builder_runner.py Docker-in-Docker adapter for the DH bundle rebuild
+  schema_service.py    schema library: list/save/delete, ENA XML/XSD import/merge, grid selection
   _bootstrap.py        puts vendored sibling code and linkml-lib on sys.path
   static/              single-page UI (index.html, app.js) + DH bundle (dh/, bind-mounted)
 webin_cli_lib/     webin-cli Docker executor (from webin-cli-browser-assistant)
 dh_builder_lib/    mimicc-dh-builder Docker executor (mirrors webin_cli_lib)
 scripts/
   vendor.sh              copy sibling repos and standalone linkml-lib into ./vendor
+  fetch_ena_checklists.sh fetch the full set of public ENA sample-checklist XMLs
   build_dh_template.sh   build the embedded DataHarmonizer bundle (local dev)
   dh_build_steps.sh       shared DH build steps (used by the above + both Dockerfiles)
   dh_builder_entrypoint.sh entrypoint for the mimicc-dh-builder image

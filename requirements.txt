@@ -2,6 +2,7 @@
 fastapi
 uvicorn[standard]
 sse-starlette
+python-multipart
 
 # ena-api-client, ena-dh scripts, and standalone linkml-lib dependencies
 httpx

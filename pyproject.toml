@@ -6,3 +6,9 @@ exclude = ["vendor"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 ignore = ["E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection defaults (Form/File/Depends/Query) are
+# evaluated once and reused by design — not the mutable-default footgun B008
+# warns about.
+extend-immutable-calls = ["fastapi.Form", "fastapi.File", "fastapi.Depends", "fastapi.Query"]

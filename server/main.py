@@ -20,7 +20,9 @@ import asyncio
 import json
 import os
 import pathlib
+import shutil
 import subprocess
+import tempfile
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -29,11 +31,12 @@ from typing import Any
 import dh_builder_runner
 import ena_service
 import read_assign
+import schema_service
 import session_store
 import webin_runner
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
@@ -91,6 +94,10 @@ def _current_output_host_dir() -> str:
 # rebuild the embedded DataHarmonizer bundle on demand.
 _DH_SCHEMA_CONTAINER_DIR = pathlib.Path(os.environ.get("DH_SCHEMA_CONTAINER_DIR", "/dh-schema"))
 _HOST_DH_SCHEMA_DIR = os.environ.get("HOST_DH_SCHEMA_DIR", str(_DH_SCHEMA_CONTAINER_DIR))
+
+# dataharmonizer-template-builder sidecar (schema editor), embedded as an
+# iframe on the Schema tab — see docker-compose.yml's "dhtb" service.
+_DHTB_URL = os.environ.get("DHTB_URL", "http://localhost:8765")
 
 
 # In-memory stores only (credentials are never persisted to disk).
@@ -193,6 +200,17 @@ class DhBuildRequest(BaseModel):
     schema_yaml: str | None = None  # if provided, overwrites the schema before rebuilding
 
 
+class SchemaSaveRequest(BaseModel):
+    name: str
+    yaml: str
+
+
+class SchemaSelectRequest(BaseModel):
+    role: str  # "sample" | "experiment"
+    schema_id: str | None = None
+    yaml: str | None = None
+
+
 class ActionRequest(BaseModel):
     action: str
     accession: str
@@ -233,6 +251,7 @@ async def health() -> dict[str, Any]:
         "host_reads_dir": _current_reads_host_dir(),
         "default_host_reads_dir": _HOST_READS_DIR,
         "default_sample_filter": ena_service.DEFAULT_SAMPLE_FILTER,
+        "dhtb_url": _DHTB_URL,
     }
 
 
@@ -729,6 +748,133 @@ async def reads_status(job_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Job not found")
     job = _jobs[job_id]
     return {"status": job["status"], "results": job.get("results", [])}
+
+
+# ---------------------------------------------------------------------------
+# Schema library: list/save/delete, import/merge from ENA XML/XSD/YAML
+# sources, and select a schema for the sample/experiment DataHarmonizer grids.
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/schemas")
+def schemas_list() -> list[dict[str, Any]]:
+    return schema_service.list_schemas()
+
+
+@app.get("/api/schemas/ena-sources")
+def schemas_ena_sources() -> dict[str, list[dict[str, str]]]:
+    return schema_service.list_ena_sources()
+
+
+@app.get("/api/schemas/{schema_id}")
+def schemas_get(schema_id: str) -> dict[str, str]:
+    try:
+        return {"yaml": schema_service.read_schema(schema_id)}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/schemas/{schema_id}/export")
+def schemas_export(schema_id: str) -> Response:
+    try:
+        yaml_text = schema_service.read_schema(schema_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(
+        content=yaml_text,
+        media_type="application/yaml",
+        headers={"Content-Disposition": f'attachment; filename="{schema_id}.yaml"'},
+    )
+
+
+@app.post("/api/schemas")
+def schemas_save(req: SchemaSaveRequest) -> dict[str, str]:
+    try:
+        schema_id = schema_service.save_schema(req.name, req.yaml)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"id": schema_id}
+
+
+@app.delete("/api/schemas/{schema_id}")
+def schemas_delete(schema_id: str) -> dict[str, str]:
+    try:
+        schema_service.delete_schema(schema_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"status": "deleted"}
+
+
+@app.post("/api/schemas/import")
+async def schemas_import(
+    source_ids: list[str] = Form(default=[]),
+    schema_ids: list[str] = Form(default=[]),
+    name: str | None = Form(default=None),
+    title: str | None = Form(default=None),
+    include: list[str] | None = Form(default=None),
+    exclude: list[str] | None = Form(default=None),
+    files: list[UploadFile] = File(default=[]),
+) -> dict[str, str]:
+    tmpdir: pathlib.Path | None = None
+    upload_paths: list[pathlib.Path] = []
+    try:
+        uploaded = [f for f in files if f.filename]
+        if uploaded:
+            tmpdir = pathlib.Path(tempfile.mkdtemp(prefix="mimicc-schema-import-"))
+            for f in uploaded:
+                dest = tmpdir / f.filename
+                dest.write_bytes(await f.read())
+                upload_paths.append(dest)
+        try:
+            yaml_text = schema_service.import_build(
+                source_ids=source_ids or None,
+                schema_ids=schema_ids or None,
+                upload_paths=upload_paths or None,
+                name=name,
+                title=title,
+                include=include,
+                exclude=exclude,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"yaml": yaml_text}
+    finally:
+        if tmpdir is not None:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@app.post("/api/schemas/import-file")
+async def schemas_import_file(file: UploadFile = File(...)) -> dict[str, str]:
+    suffix = pathlib.Path(file.filename or "").suffix or ".yaml"
+    fd, tmp_name = tempfile.mkstemp(suffix=suffix)
+    os.close(fd)
+    tmp_path = pathlib.Path(tmp_name)
+    try:
+        tmp_path.write_bytes(await file.read())
+        try:
+            yaml_text = schema_service.import_build(upload_paths=[tmp_path])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"yaml": yaml_text}
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+@app.post("/api/schemas/select")
+def schemas_select(req: SchemaSelectRequest) -> dict[str, str]:
+    if req.schema_id is None and req.yaml is None:
+        raise HTTPException(status_code=422, detail="Provide either schema_id or yaml")
+    yaml_text = req.yaml
+    if yaml_text is None:
+        try:
+            yaml_text = schema_service.read_schema(req.schema_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    try:
+        template = schema_service.select_for_grid(req.role, yaml_text, dh_dir=_DH_DIR)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"template": template}
 
 
 # ---------------------------------------------------------------------------
