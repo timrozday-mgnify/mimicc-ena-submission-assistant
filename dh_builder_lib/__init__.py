@@ -5,8 +5,8 @@ output. Has no assumptions about Docker-in-Docker or host-path mounting —
 callers are responsible for path validation and creating the output
 directory.
 
-Mirrors webin_cli_lib so the on-demand DH rebuild path follows the same
-pattern as the existing webin-cli sibling-container submission path.
+Mirrors the read-helper's webin-cli sibling-container pattern so the
+on-demand DH rebuild path follows the same approach.
 """
 
 from __future__ import annotations

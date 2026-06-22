@@ -27,7 +27,7 @@ mkdir -p "$VENDOR/scripts" "$VENDOR/assets"
 cp -R "$ENA_API_CLIENT/ena_api" "$VENDOR/ena_api"
 
 # ena-dh submission scripts (added to sys.path => `import ena_common`, etc.)
-#   note: submit_reads.py is intentionally NOT copied — reads go via webin_cli_lib.
+#   note: submit_reads.py is intentionally NOT copied — reads go via the local read-helper app.
 for f in ena_common.py submit_sample.py submit_study.py prepare_dh_output.py; do
     cp "$ENA_DH/scripts/$f" "$VENDOR/scripts/$f"
 done
