@@ -35,6 +35,10 @@ services:
         dataharmonizer-src: ${DATAHARMONIZER_DIR:-../DataHarmonizer}
         # Shared LinkML utility package used by the server runtime.
         linkml-lib: ${LINKML_LIB_DIR:-../linkml-lib}
+        # dh-builder checkout (https://github.com/timrozday-mgnify/dh-builder),
+        # source of scripts/dh_build_steps.sh for the embedded DH-bundle build
+        # stage above.
+        dh-builder-src: ${DH_BUILDER_DIR:-../dh-builder}
     container_name: mimicc-ena-submission-assistant
     depends_on:
       db:

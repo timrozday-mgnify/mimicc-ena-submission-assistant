@@ -1,6 +1,8 @@
 # Builds the embedded DataHarmonizer (DH) bundle from a local DataHarmonizer
 # checkout, supplied as the `dataharmonizer-src` additional build context (see
-# docker-compose.yml). Mirrors scripts/build_dh_template.sh.
+# docker-compose.yml). Mirrors scripts/build_dh_template.sh. dh_build_steps.sh
+# is pulled from the dh-builder sibling checkout (`dh-builder-src` build
+# context) rather than vendored here — see https://github.com/timrozday-mgnify/dh-builder.
 FROM node:20-slim AS dh-builder
 RUN apt-get update && apt-get install -y python3 python3-pip && rm -rf /var/lib/apt/lists/*
 
@@ -11,7 +13,7 @@ RUN pip install --no-cache-dir --break-system-packages -r /dh-src/requirements.t
 # Copy the whole directory (not a single named file) so this step doesn't
 # fail if mimicc_experiment.yaml is ever absent (e.g. an older vendor.sh run).
 COPY vendor/schemas/ /tmp/schemas/
-COPY scripts/dh_build_steps.sh /tmp/dh_build_steps.sh
+COPY --from=dh-builder-src scripts/dh_build_steps.sh /tmp/dh_build_steps.sh
 # Sample (mimicc_sample.yaml) and experiment (mimicc_experiment.yaml) are two
 # separate templates — see README "Experiment metadata schema". The
 # experiment template builds alongside the sample one if its schema file is

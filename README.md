@@ -150,12 +150,13 @@ elsewhere) to build without it — the Samples tab still works via DH export
 upload either way.
 
 For local non-Docker development, `scripts/build_dh_template.sh` does the same
-build directly on the host (requires Node + Yarn there instead). Both share
-the actual build steps (`scripts/dh_build_steps.sh`) with the Dockerfile's
-`dh-builder` stage, and with the [`dh-builder`](https://github.com/timrozday-mgnify/dh-builder)
-repo's image (pulled in there via an additional `mimicc-scripts` build
-context pointing back at this `scripts/` directory), so the three can't drift
-apart.
+build directly on the host (requires Node + Yarn there instead). Both this and
+the Dockerfile's `dh-builder` stage pull the actual build steps
+(`dh_build_steps.sh`) from the standalone
+[`dh-builder`](https://github.com/timrozday-mgnify/dh-builder) repo — its
+single canonical copy, not vendored here — via a `dh-builder-src` build
+context / `DH_BUILDER_DIR` sibling checkout (default `../dh-builder`), so they
+can't drift apart.
 
 #### On-demand rebuild
 
@@ -175,7 +176,6 @@ repo (build it once with:
 git clone https://github.com/timrozday-mgnify/dh-builder.git ../dh-builder
 docker build -f ../dh-builder/Dockerfile \
   --build-context dataharmonizer-src=../DataHarmonizer \
-  --build-context mimicc-scripts=./scripts \
   -t mimicc-dh-builder ../dh-builder
 ```
 
@@ -419,20 +419,20 @@ scripts/
   vendor.sh              copy sibling repos and standalone linkml-lib into ./vendor
   fetch_ena_checklists.sh fetch the full set of public ENA sample-checklist XMLs
   build_dh_template.sh   build the embedded DataHarmonizer bundle (local dev)
-  dh_build_steps.sh       shared DH build steps (used by the above, the Dockerfile's
-                          dh-builder stage, and the standalone dh-builder repo)
   server_entrypoint.sh   seeds the bind-mounted DH bundle/schema dirs on first run
 tests/             pytest + Playwright
 Dockerfile             builds the main server image (includes a dh-builder stage)
 docker-compose.yml
 ```
 
-`dh_builder_lib` (the Docker executor `dh_builder_runner.py` wraps) and the
-Dockerfile for the `mimicc-dh-builder` image live in the standalone
-[`dh-builder`](https://github.com/timrozday-mgnify/dh-builder) repo (vendored
-via `scripts/vendor.sh`, default sibling path `../dh-builder`), the same way
-[`read-helper`](https://github.com/timrozday-mgnify/read-helper) does for
-reads upload.
+`dh_builder_lib` (the Docker executor `dh_builder_runner.py` wraps), the
+Dockerfile for the `mimicc-dh-builder` image, and `dh_build_steps.sh` (the
+shared DH build steps, also pulled in by the Dockerfile's embedded
+`dh-builder` stage and `scripts/build_dh_template.sh` above) all live in the
+standalone [`dh-builder`](https://github.com/timrozday-mgnify/dh-builder) repo
+(vendored via `scripts/vendor.sh`, default sibling path `../dh-builder`), the
+same way [`read-helper`](https://github.com/timrozday-mgnify/read-helper) does
+for reads upload.
 
 ## Notes
 
