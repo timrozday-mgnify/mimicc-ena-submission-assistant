@@ -99,7 +99,7 @@ _executor = ThreadPoolExecutor(max_workers=4)
 _STATIC = pathlib.Path(__file__).resolve().parent / "static"
 _DH_DIR = _STATIC / "dh"
 # Host path backing _DH_DIR (see docker-compose.yml) — used for the
-# mimicc-dh-builder sibling -v mount so an on-demand rebuild writes straight
+# dh-builder sibling -v mount so an on-demand rebuild writes straight
 # into the directory this server already serves /dh from.
 _HOST_DH_OUTPUT_DIR = os.environ.get("HOST_DH_OUTPUT_DIR", str(_DH_DIR))
 
