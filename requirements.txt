@@ -17,3 +17,10 @@ lxml
 pendulum
 typer
 linkml
+
+# Pinned sibling packages (replaces scripts/vendor.sh's cp -R from ../<repo>).
+# Bump the tag here when a sibling repo cuts a new release.
+ena-api-client @ git+https://github.com/timrozday-mgnify/ena-api-client.git@v0.1.0
+linkml-lib @ git+https://github.com/timrozday-mgnify/linkml-lib.git@v0.1.0
+dh-builder-lib @ git+https://github.com/timrozday-mgnify/dh-builder.git@v0.1.0
+ena-dh-scripts @ git+https://github.com/timrozday-mgnify/ena-dh-scripts.git@v0.1.0

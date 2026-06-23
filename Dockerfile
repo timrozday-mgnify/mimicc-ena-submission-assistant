@@ -1,19 +1,36 @@
-# Builds the embedded DataHarmonizer (DH) bundle from a local DataHarmonizer
-# checkout, supplied as the `dataharmonizer-src` additional build context (see
-# docker-compose.yml). Mirrors scripts/build_dh_template.sh. dh_build_steps.sh
-# is pulled from the dh-builder sibling checkout (`dh-builder-src` build
-# context) rather than vendored here — see https://github.com/timrozday-mgnify/dh-builder.
+# Pinned refs for sibling repos this image pulls at build time. Bump these
+# (and the matching git+https pins in requirements.txt) when a sibling repo
+# cuts a new tag — see README "Pinned dependency versions".
+ARG DATAHARMONIZER_REF=v2.1.0-mimicc
+ARG DH_BUILDER_REF=v0.1.0
+
+# Pinned sibling-repo sources, replacing the old additional_contexts/vendor.sh
+# local-checkout mechanism. Each is a shallow clone at a fixed tag.
+FROM alpine/git:latest AS dataharmonizer-src
+ARG DATAHARMONIZER_REF
+RUN git clone --branch "${DATAHARMONIZER_REF}" --depth 1 \
+      https://github.com/timrozday-mgnify/DataHarmonizer.git /src
+
+FROM alpine/git:latest AS dh-builder-src
+ARG DH_BUILDER_REF
+RUN git clone --branch "${DH_BUILDER_REF}" --depth 1 \
+      https://github.com/timrozday-mgnify/dh-builder.git /src
+
+# Builds the embedded DataHarmonizer (DH) bundle from the pinned DataHarmonizer
+# checkout above. Mirrors scripts/build_dh_template.sh. dh_build_steps.sh comes
+# from the pinned dh-builder checkout — see
+# https://github.com/timrozday-mgnify/dh-builder.
 FROM node:20-slim AS dh-builder
 RUN apt-get update && apt-get install -y python3 python3-pip && rm -rf /var/lib/apt/lists/*
 
-COPY --from=dataharmonizer-src . /dh-src
+COPY --from=dataharmonizer-src /src /dh-src
 RUN pip install --no-cache-dir --break-system-packages -r /dh-src/requirements.txt
 
-# The MIMICC LinkML schema(s) are already vendored by scripts/vendor.sh.
-# Copy the whole directory (not a single named file) so this step doesn't
-# fail if mimicc_experiment.yaml is ever absent (e.g. an older vendor.sh run).
-COPY vendor/schemas/ /tmp/schemas/
-COPY --from=dh-builder-src scripts/dh_build_steps.sh /tmp/dh_build_steps.sh
+# The MIMICC LinkML schema(s) are committed in this repo's schemas/ —
+# copy the whole directory (not a single named file) so this step doesn't
+# fail if mimicc_experiment.yaml is ever absent.
+COPY schemas/ /tmp/schemas/
+COPY --from=dh-builder-src /src/scripts/dh_build_steps.sh /tmp/dh_build_steps.sh
 # Sample (mimicc_sample.yaml) and experiment (mimicc_experiment.yaml) are two
 # separate templates — see README "Experiment metadata schema". The
 # experiment template builds alongside the sample one if its schema file is
@@ -33,13 +50,17 @@ RUN apt-get update && apt-get install -y docker.io curl && rm -rf /var/lib/apt/l
 
 WORKDIR /app
 
-COPY --from=linkml-lib . /linkml-lib
+# ena_api, linkml_lib, dh_builder_lib and the ena-dh-scripts submission
+# scripts are pinned pip dependencies (see requirements.txt) — no local
+# build context or vendor.sh copy needed for them anymore.
 COPY requirements.txt .
-RUN pip install --no-cache-dir /linkml-lib && pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Vendored sibling code (populated by scripts/vendor.sh before building),
-# including dh_builder_lib.
-COPY vendor/ vendor/
+# Schemas + ENA XSDs used for sample/study build + validation. These aren't
+# Python packages — they're committed directly in this repo (schemas/,
+# assets/ena_schema/), copied straight from the local build context.
+COPY schemas/ schemas/
+COPY assets/ena_schema/ assets/ena_schema/
 # App code
 COPY server/ server/
 # Django ORM management entrypoint (migrations).
@@ -50,12 +71,11 @@ COPY manage.py manage.py
 # defaults on first run by scripts/server_entrypoint.sh, so an on-demand
 # rebuild (dh_builder_lib) can update them without an image rebuild.
 COPY --from=dh-builder /dh-src/web/dist/. dh-default/
-COPY vendor/schemas/mimicc_sample.yaml dh-schema-default/mimicc.yaml
+COPY schemas/mimicc_sample.yaml dh-schema-default/mimicc.yaml
 COPY scripts/server_entrypoint.sh /usr/local/bin/server_entrypoint.sh
 RUN chmod +x /usr/local/bin/server_entrypoint.sh
 
 ENV PYTHONPATH=/app/server:/app
-ENV ENA_DH_VENDOR=/app/vendor
 
 WORKDIR /app/server
 ENTRYPOINT ["/usr/local/bin/server_entrypoint.sh"]

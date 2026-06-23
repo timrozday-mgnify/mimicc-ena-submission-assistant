@@ -1,7 +1,7 @@
 """Integration test for the DataHarmonizer -> submission prepare pipeline.
 
 Exercises the real ``linkml_lib`` filter + rename against the actual MIMICC
-schema. Skipped automatically when the vendored ena-dh scripts or the heavy
+schema. Skipped automatically when the ena-dh-scripts package or the heavy
 ``linkml`` dependency are unavailable.
 """
 
@@ -22,8 +22,8 @@ try:
     import ena_common  # noqa: F401,E402
     import prepare_dh_output  # noqa: F401,E402
     import submit_sample  # noqa: F401,E402
-except Exception:  # pragma: no cover - environment without vendored scripts/schema
-    pytest.skip("vendored ena-dh scripts/schema not available", allow_module_level=True)
+except Exception:  # pragma: no cover - environment without ena-dh-scripts/schema
+    pytest.skip("ena-dh-scripts package/schema not available", allow_module_level=True)
 
 
 def test_prepare_filters_and_renames():

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fetch the full set of public ENA sample-checklist XML definitions (beyond
-# the three already vendored at the top level of vendor/assets/ena_schema/ --
+# the three already committed at the top level of assets/ena_schema/ --
 # ERC000015/22/25, used directly by submit_sample.py) so the schema "import"
 # feature (POST /api/schemas/import, schema_service.list_ena_sources) can draw
 # on all of them.
@@ -11,14 +11,15 @@
 # across the known accession range and keeps only the ones that resolve to a
 # real <CHECKLIST> definition.
 #
-# Re-run after scripts/vendor.sh — that script wipes and recreates vendor/, so
-# it does not preserve files fetched here.
+# assets/ena_schema/checklists/ is committed, so files fetched here persist
+# across builds — re-run occasionally to pick up new checklist accessions
+# ENA adds over time.
 #
 # Usage: bash scripts/fetch_ena_checklists.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEST="$ROOT/vendor/assets/ena_schema/checklists"
+DEST="$ROOT/assets/ena_schema/checklists"
 BASE_URL="https://www.ebi.ac.uk/ena/browser/api/xml"
 # Observed live checklist accessions top out in the low 60s; padded with
 # headroom for accessions ENA adds later.
@@ -29,9 +30,9 @@ mkdir -p "$DEST"
 fetched=0
 for n in $(seq -f "%06g" 1 "$MAX_N"); do
   acc="ERC$n"
-  # Skip accessions already vendored at the top level (used directly by
+  # Skip accessions already committed at the top level (used directly by
   # submit_sample.py) so the import list doesn't show duplicates.
-  if [ -f "$ROOT/vendor/assets/ena_schema/$acc.xml" ]; then
+  if [ -f "$ROOT/assets/ena_schema/$acc.xml" ]; then
     continue
   fi
   dest_file="$DEST/$acc.xml"

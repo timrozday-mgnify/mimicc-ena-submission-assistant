@@ -11,8 +11,6 @@ import os
 from collections.abc import Generator
 from pathlib import Path
 
-import _bootstrap  # noqa: F401 - side effect: extends sys.path to the vendored sibling code (dh_builder_lib)
-
 from dh_builder_lib import iter_dh_builder_logs as _iter_logs
 
 _HOSTROOT = Path(os.environ.get("HOSTROOT", "/hostroot"))

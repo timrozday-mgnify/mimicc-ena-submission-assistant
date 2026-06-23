@@ -28,17 +28,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      additional_contexts:
-        # Local DataHarmonizer checkout used to build the embedded DH bundle
-        # (server/static/dh/) during the image build. Override if your
-        # checkout lives somewhere other than the default sibling path.
-        dataharmonizer-src: ${DATAHARMONIZER_DIR:-../DataHarmonizer}
-        # Shared LinkML utility package used by the server runtime.
-        linkml-lib: ${LINKML_LIB_DIR:-../linkml-lib}
-        # dh-builder checkout (https://github.com/timrozday-mgnify/dh-builder),
-        # source of scripts/dh_build_steps.sh for the embedded DH-bundle build
-        # stage above.
-        dh-builder-src: ${DH_BUILDER_DIR:-../dh-builder}
+      # DataHarmonizer/dh-builder sources are pulled inside the Dockerfile
+      # itself at pinned tags (see its DATAHARMONIZER_REF/DH_BUILDER_REF
+      # build args) — no local sibling checkout or additional_contexts
+      # needed. The MIMICC schemas + ENA XSDs are committed directly in
+      # this repo (schemas/, assets/ena_schema/).
     container_name: mimicc-ena-submission-assistant
     depends_on:
       db:
@@ -98,7 +92,8 @@ services:
     # See mimicc-server's platform comment above.
     platform: ${MIMICC_PLATFORM:-linux/arm64}
     build:
-      context: ${READ_HELPER_DIR:-../read-helper}
+      # Pinned tag — see README "Pinned dependency versions" for how to bump it.
+      context: https://github.com/timrozday-mgnify/read-helper.git#v0.1.0
     container_name: mimicc-read-helper
     ports:
       - "127.0.0.1:${HELPER_PORT:-9100}:9100"
@@ -118,10 +113,12 @@ services:
     # See mimicc-server's platform comment above.
     platform: ${MIMICC_PLATFORM:-linux/arm64}
     build:
-      context: ${DHTB_DIR:-../dataharmonizer-template-builder}
+      # Pinned tags — see README "Pinned dependency versions" for how to bump these.
+      context: https://github.com/timrozday-mgnify/dataharmonizer-template-builder.git#v0.1.0
       additional_contexts:
-        dataharmonizer-src: ${DATAHARMONIZER_DIR:-../DataHarmonizer}
-        linkml-lib: ${LINKML_LIB_DIR:-../linkml-lib}
+        dataharmonizer-src: https://github.com/timrozday-mgnify/DataHarmonizer.git#v2.1.0-mimicc
+        linkml-lib: https://github.com/timrozday-mgnify/linkml-lib.git#v0.1.0
+        dh-builder-lib: https://github.com/timrozday-mgnify/dh-builder.git#v0.1.0
     container_name: mimicc-dhtb
     ports:
       - "127.0.0.1:${MIMICC_DHTB_PORT:-8765}:8765"

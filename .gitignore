@@ -1,7 +1,6 @@
 .venv/
 __pycache__/
 *.pyc
-vendor/
 server/static/dh/
 .env
 .DS_Store

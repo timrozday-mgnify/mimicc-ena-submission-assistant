@@ -1,0 +1,1825 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CHECKLIST_SET>
+<CHECKLIST accession="ERC000035" checklistType="Sample">
+        <IDENTIFIERS>
+            <PRIMARY_ID>ERC000035</PRIMARY_ID>
+        </IDENTIFIERS>
+        <DESCRIPTOR>
+            <LABEL>ENA Crop Plant sample enhanced annotation checklist</LABEL>
+            <NAME>ENA Crop Plant sample enhanced annotation checklist</NAME>
+            <DESCRIPTION>The ENA Crop sample enhanced checklist has been developed in collaboration with a number of EMBL-EBI teams to capture enriched annotation of published crop plant samples that lack sufficient reported metadata and are typically associated with systematic transcriptomic realignment-based analyses.</DESCRIPTION>
+            <AUTHORITY>ENA</AUTHORITY>
+            <FIELD_GROUP restrictionType="Any number or none of the fields">
+                <NAME>Part and developmental stage of organism</NAME>
+                <FIELD>
+                    <LABEL>cell_type</LABEL>
+                    <NAME>cell_type</NAME>
+                    <DESCRIPTION>cell type from which the sample was obtained</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>dev_stage</LABEL>
+                    <NAME>dev_stage</NAME>
+                    <DESCRIPTION>if the sample was obtained from an organism in a specific developmental stage, it is specified with this qualifier</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>organism part</LABEL>
+                    <NAME>organism_part</NAME>
+                    <DESCRIPTION>The part of organism's anatomy or substance arising from an organism from which the biomaterial was derived, excludes cells.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+            </FIELD_GROUP>
+            <FIELD_GROUP restrictionType="Any number or none of the fields">
+                <NAME>non-sample terms</NAME>
+                <FIELD>
+                    <LABEL>ploidy</LABEL>
+                    <NAME>ploidy</NAME>
+                    <DESCRIPTION>The ploidy level of the genome (e.g. allopolyploid, haploid, diploid, triploid, tetraploid). It has implications for the downstream study of duplicated gene and regions of the genomes (and perhaps for difficulties in assembly). For terms, please select terms listed under class ploidy (PATO:001374) of Phenotypic Quality Ontology (PATO), and for a browser of PATO (v 2018-03-27) please refer to http://purl.bioontology.org/ontology/PATO</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>infect</LABEL>
+                    <NAME>infect</NAME>
+                    <DESCRIPTION>The name of the disease causing/contaminating organism; the value can also be ‘control’.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+            </FIELD_GROUP>
+            <FIELD_GROUP restrictionType="Any number or none of the fields">
+                <NAME>Collection event information</NAME>
+                <FIELD>
+                    <LABEL>collection date</LABEL>
+                    <NAME>collection_date</NAME>
+                    <DESCRIPTION>The date the sample was collected with the intention of sequencing, either as an instance (single point in time) or interval. In case no exact time is available, the date/time can be right truncated i.e. all of these are valid ISO8601 compliant times: 2008-01-23T19:23:10+00:00; 2008-01-23T19:23:10; 2008-01-23; 2008-01; 2008.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD>
+                            <REGEX_VALUE>(^[12][0-9]{3}(-(0[1-9]|1[0-2])(-(0[1-9]|[12][0-9]|3[01])(T[0-9]{2}:[0-9]{2}(:[0-9]{2})?Z?([+-][0-9]{1,2})?)?)?)?(/[0-9]{4}(-[0-9]{2}(-[0-9]{2}(T[0-9]{2}:[0-9]{2}(:[0-9]{2})?Z?([+-][0-9]{1,2})?)?)?)?)?$)|(^not applicable$)|(^not collected$)|(^not provided$)|(^restricted access$)|(^missing: control sample$)|(^missing: sample group$)|(^missing: synthetic construct$)|(^missing: lab stock$)|(^missing: third party data$)|(^missing: data agreement established pre-2023$)|(^missing: endangered species$)|(^missing: human-identifiable$)|(^missing$)</REGEX_VALUE>
+                        </TEXT_FIELD>
+                    </FIELD_TYPE>
+                    <MANDATORY>mandatory</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+            </FIELD_GROUP>
+            <FIELD_GROUP restrictionType="Any number or none of the fields">
+                <NAME>sample collection</NAME>
+                <FIELD>
+                    <LABEL>sampling time point</LABEL>
+                    <NAME>sampling_time_point</NAME>
+                    <DESCRIPTION>Time point at which a sample or observation is made or taken from a biomaterial as measured from some reference point. Indicate the timepoint written in ISO 8601 format.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>initial time point</LABEL>
+                    <NAME>initial_time_point</NAME>
+                    <DESCRIPTION>The first time point measured at the start of some process.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+            </FIELD_GROUP>
+            <FIELD_GROUP restrictionType="Any number or none of the fields">
+                <NAME>Organism characteristics</NAME>
+                <FIELD>
+                    <LABEL>sex</LABEL>
+                    <NAME>sex</NAME>
+                    <DESCRIPTION>sex of the organism from which the sample was obtained</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>age</LABEL>
+                    <NAME>age</NAME>
+                    <DESCRIPTION>Age of the organism the sample was derived from.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>recommended</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>geographic location (country and/or sea)</LABEL>
+                    <NAME>geographic_location_country_andor_sea</NAME>
+                    <DESCRIPTION>The geographical origin of where the sample was collected from, with the intention of sequencing, as defined by the country or sea name. Country or sea names should be chosen from the INSDC country list (http://insdc.org/country.html).</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_CHOICE_FIELD>
+                            <TEXT_VALUE>
+                                <VALUE>Afghanistan</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Albania</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Algeria</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>American Samoa</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Andorra</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Angola</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Anguilla</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Antarctica</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Antigua and Barbuda</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Arctic Ocean</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Argentina</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Armenia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Aruba</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Ashmore and Cartier Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Atlantic Ocean</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Australia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Austria</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Azerbaijan</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Bahamas</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Bahrain</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Baker Island</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Baltic Sea</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Bangladesh</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Barbados</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Bassas da India</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Belarus</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Belgium</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Belize</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Benin</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Bermuda</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Bhutan</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Bolivia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Borneo</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Bosnia and Herzegovina</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Botswana</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Bouvet Island</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Brazil</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>British Virgin Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Brunei</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Bulgaria</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Burkina Faso</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Burundi</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Cambodia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Cameroon</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Canada</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Cape Verde</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Cayman Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Central African Republic</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Chad</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Chile</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>China</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Christmas Island</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Clipperton Island</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Cocos Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Colombia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Comoros</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Cook Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Coral Sea Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Costa Rica</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Cote d'Ivoire</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Croatia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Cuba</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Curacao</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Cyprus</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Czechia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Czech Republic</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Democratic Republic of the Congo</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Denmark</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Djibouti</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Dominica</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Dominican Republic</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Ecuador</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Egypt</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>El Salvador</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Equatorial Guinea</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Eritrea</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Estonia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Eswatini</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Ethiopia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Europa Island</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Falkland Islands (Islas Malvinas)</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Faroe Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Fiji</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Finland</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>France</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>French Guiana</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>French Polynesia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>French Southern and Antarctic Lands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Gabon</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Gambia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Gaza Strip</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Georgia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Germany</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Ghana</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Gibraltar</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Glorioso Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Greece</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Greenland</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Grenada</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Guadeloupe</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Guam</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Guatemala</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Guernsey</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Guinea</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Guinea-Bissau</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Guyana</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Haiti</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Heard Island and McDonald Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Honduras</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Hong Kong</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Howland Island</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Hungary</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Iceland</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>India</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Indian Ocean</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Indonesia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Iran</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Iraq</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Ireland</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Isle of Man</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Israel</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Italy</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Jamaica</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Jan Mayen</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Japan</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Jarvis Island</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Jersey</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Johnston Atoll</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Jordan</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Juan de Nova Island</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Kazakhstan</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Kenya</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Kerguelen Archipelago</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Kingman Reef</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Kiribati</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Kosovo</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Kuwait</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Kyrgyzstan</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Laos</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Latvia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Lebanon</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Lesotho</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Liberia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Libya</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Liechtenstein</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Line Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Lithuania</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Luxembourg</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Macau</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Madagascar</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Malawi</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Malaysia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Maldives</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Mali</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Malta</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Marshall Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Martinique</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Mauritania</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Mauritius</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Mayotte</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Mediterranean Sea</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Mexico</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Micronesia, Federated States of</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Midway Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Moldova</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Monaco</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Mongolia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Montenegro</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Montserrat</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Morocco</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Mozambique</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Myanmar</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Namibia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Nauru</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Navassa Island</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Nepal</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Netherlands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>New Caledonia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>New Zealand</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Nicaragua</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Niger</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Nigeria</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Niue</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Norfolk Island</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>North Korea</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>North Macedonia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>North Sea</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Northern Mariana Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Norway</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Oman</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Pacific Ocean</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Pakistan</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Palau</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Palmyra Atoll</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Panama</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Papua New Guinea</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Paracel Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Paraguay</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Peru</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Philippines</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Pitcairn Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Poland</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Portugal</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Puerto Rico</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Qatar</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Republic of the Congo</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Reunion</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Romania</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Ross Sea</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Russia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Rwanda</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Saint Barthelemy</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Saint Helena</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Saint Kitts and Nevis</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Saint Lucia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Saint Pierre and Miquelon</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Saint Vincent and the Grenadines</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Samoa</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>San Marino</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Saint Martin</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Sao Tome and Principe</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Saudi Arabia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Senegal</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Serbia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Seychelles</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Sierra Leone</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Singapore</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Sint Maarten</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Slovakia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Slovenia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Solomon Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Somalia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>South Africa</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>South Georgia and the South Sandwich Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>South Korea</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>South Sudan</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Southern Ocean</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Spain</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Spratly Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Sri Lanka</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>State of Palestine</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Sudan</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Suriname</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Svalbard</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Sweden</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Switzerland</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Syria</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Taiwan</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Tajikistan</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Tanzania</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Tasman Sea</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Thailand</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Timor-Leste</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Togo</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Tokelau</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Tonga</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Trinidad and Tobago</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Tromelin Island</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Tunisia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Turkey</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Turkmenistan</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Turks and Caicos Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Tuvalu</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>USA</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Uganda</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Ukraine</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>United Arab Emirates</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>United Kingdom</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Uruguay</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Uzbekistan</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Vanuatu</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Venezuela</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Viet Nam</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Wake Island</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Virgin Islands</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Wallis and Futuna</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>West Bank</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Western Sahara</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Yemen</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Zambia</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>Zimbabwe</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>missing</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>missing: control sample</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>missing: data agreement established pre-2023</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>missing: endangered species</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>missing: human-identifiable</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>missing: lab stock</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>missing: sample group</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>missing: synthetic construct</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>missing: third party data</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>not applicable</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>not collected</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>not provided</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>restricted access</VALUE>
+                            </TEXT_VALUE>
+                        </TEXT_CHOICE_FIELD>
+                    </FIELD_TYPE>
+                    <MANDATORY>mandatory</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+            </FIELD_GROUP>
+            <FIELD_GROUP restrictionType="Any number or none of the fields">
+                <NAME>default</NAME>
+                <FIELD>
+                    <LABEL>phenotype</LABEL>
+                    <NAME>phenotype</NAME>
+                    <DESCRIPTION>Where possible, please use the Experimental Factor Ontology (EFO) to describe your phenotypes.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>cellular component</LABEL>
+                    <NAME>cellular_component</NAME>
+                    <DESCRIPTION>The part of a cell or its extracellular environment in which a gene product is located.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>individual</LABEL>
+                    <NAME>individual</NAME>
+                    <DESCRIPTION>An individual used a specimen in an experiment, from which a material sample was derived.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>disease staging</LABEL>
+                    <NAME>disease_staging</NAME>
+                    <DESCRIPTION>The stage or progression of a disease in an organism. Includes pathological staging of cancers and other disease progression. E.g. Dukes C stage describing colon cancer (EFO_0000410).</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>immunoprecipitate</LABEL>
+                    <NAME>immunoprecipitate</NAME>
+                    <DESCRIPTION>The precipitate antibody bound target molecules generated when precipitating an antigen out of a solution during the process of immunoprecipitation.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>replicate</LABEL>
+                    <NAME>replicate</NAME>
+                    <DESCRIPTION>A role played by a biological sample in the context of an experiment where the intent is that biological or technical variation is measured.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+            </FIELD_GROUP>
+            <FIELD_GROUP restrictionType="Any number or none of the fields">
+                <NAME>Infraspecies information</NAME>
+                <FIELD>
+                    <LABEL>cultivar</LABEL>
+                    <NAME>cultivar</NAME>
+                    <DESCRIPTION>cultivar (cultivated variety) of plant from which sample was obtained</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>ecotype</LABEL>
+                    <NAME>ecotype</NAME>
+                    <DESCRIPTION>a population within a given species displaying genetically based, phenotypic traits that reflect adaptation to a local habitat.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>cell_line</LABEL>
+                    <NAME>cell_line</NAME>
+                    <DESCRIPTION>cell line from which the sample was obtained</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>strain</LABEL>
+                    <NAME>strain</NAME>
+                    <DESCRIPTION>Name of the strain from which the sample was obtained.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+            </FIELD_GROUP>
+            <FIELD_GROUP restrictionType="Any number or none of the fields">
+                <NAME>treatment</NAME>
+                <FIELD>
+                    <LABEL>time</LABEL>
+                    <NAME>time</NAME>
+                    <DESCRIPTION>The duration in which the treatment has occurred.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>dose</LABEL>
+                    <NAME>dose</NAME>
+                    <DESCRIPTION>The total quantity or strength of a substance administered at one time.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>chemical compound</LABEL>
+                    <NAME>chemical_compound</NAME>
+                    <DESCRIPTION>A drug, solvent, chemical, etc., with a property that can be measured such as concentration (http://purl.obolibrary.org/obo/CHEBI_37577).</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+            </FIELD_GROUP>
+            <FIELD_GROUP restrictionType="Any number or none of the fields">
+                <NAME>experimental factor and block</NAME>
+                <FIELD>
+                    <LABEL>experimental factor 1</LABEL>
+                    <NAME>experimental_factor_1</NAME>
+                    <DESCRIPTION>A variable that the experiment is based on.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_CHOICE_FIELD>
+                            <TEXT_VALUE>
+                                <VALUE>RNA</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>age</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>block</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>cell line</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>cell type</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>chemical compound</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>cultivar</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>dev_stage</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>disease staging</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>dose</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>ecotype</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>environmental history</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>environmental stress</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>genotype</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>growth condition</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>immunoprecipitate</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>individual</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>infect</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>initial time point</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>organism</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>organism part</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>phenotype</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>ploidy</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>protein-bound</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>protocol</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>replicate</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>rnase</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sample type</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sampling site</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sampling time point</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sex</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>strain</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>temperature</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>time</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>transgene</VALUE>
+                            </TEXT_VALUE>
+                        </TEXT_CHOICE_FIELD>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>experimental factor 2</LABEL>
+                    <NAME>experimental_factor_2</NAME>
+                    <DESCRIPTION>A variable that the experiment is based on.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_CHOICE_FIELD>
+                            <TEXT_VALUE>
+                                <VALUE>RNA</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>age</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>block</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>cell line</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>cell type</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>chemical compound</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>cultivar</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>dev_stage</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>disease staging</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>dose</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>ecotype</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>environmental history</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>environmental stress</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>genotype</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>growth condition</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>immunoprecipitate</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>individual</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>infect</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>initial time point</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>organism</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>organism part</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>phenotype</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>ploidy</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>protein-bound</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>protocol</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>replicate</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>rnase</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sample type</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sampling site</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sampling time point</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sex</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>strain</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>temperature</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>time</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>transgene</VALUE>
+                            </TEXT_VALUE>
+                        </TEXT_CHOICE_FIELD>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>experimental factor 3</LABEL>
+                    <NAME>experimental_factor_3</NAME>
+                    <DESCRIPTION>A variable that the experiment is based on.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_CHOICE_FIELD>
+                            <TEXT_VALUE>
+                                <VALUE>RNA</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>age</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>block</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>cell line</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>cell type</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>chemical compound</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>cultivar</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>dev_stage</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>disease staging</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>dose</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>ecotype</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>environmental history</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>environmental stress</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>genotype</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>growth condition</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>immunoprecipitate</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>individual</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>infect</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>initial time point</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>organism</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>organism part</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>phenotype</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>ploidy</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>protein-bound</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>protocol</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>replicate</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>rnase</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sample type</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sampling site</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sampling time point</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sex</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>strain</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>temperature</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>time</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>transgene</VALUE>
+                            </TEXT_VALUE>
+                        </TEXT_CHOICE_FIELD>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>experimental factor 4</LABEL>
+                    <NAME>experimental_factor_4</NAME>
+                    <DESCRIPTION>A variable that the experiment is based on.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_CHOICE_FIELD>
+                            <TEXT_VALUE>
+                                <VALUE>RNA</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>age</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>block</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>cell line</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>cell type</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>chemical compound</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>cultivar</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>dev_stage</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>disease staging</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>dose</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>ecotype</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>environmental history</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>environmental stress</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>genotype</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>growth condition</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>immunoprecipitate</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>individual</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>infect</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>initial time point</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>organism</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>organism part</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>phenotype</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>ploidy</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>protein-bound</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>protocol</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>replicate</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>rnase</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sample type</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sampling site</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sampling time point</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sex</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>strain</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>temperature</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>time</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>transgene</VALUE>
+                            </TEXT_VALUE>
+                        </TEXT_CHOICE_FIELD>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>experimental factor 5</LABEL>
+                    <NAME>experimental_factor_5</NAME>
+                    <DESCRIPTION>A variable that the experiment is based on.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_CHOICE_FIELD>
+                            <TEXT_VALUE>
+                                <VALUE>RNA</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>age</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>block</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>cell line</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>cell type</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>chemical compound</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>cultivar</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>dev_stage</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>disease staging</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>dose</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>ecotype</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>environmental history</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>environmental stress</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>genotype</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>growth condition</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>immunoprecipitate</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>individual</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>infect</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>initial time point</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>organism</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>organism part</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>phenotype</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>ploidy</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>protein-bound</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>protocol</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>replicate</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>rnase</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sample type</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sampling site</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sampling time point</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>sex</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>strain</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>temperature</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>time</VALUE>
+                            </TEXT_VALUE>
+                            <TEXT_VALUE>
+                                <VALUE>transgene</VALUE>
+                            </TEXT_VALUE>
+                        </TEXT_CHOICE_FIELD>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>block</LABEL>
+                    <NAME>block</NAME>
+                    <DESCRIPTION>A block or batch is an experimental unit arrangement into a group which is similar to one another. Typically, a blocking factor is a source of variability that is not of primary interest to the experimenter. An example of a blocking factor might be the sex of a patient; by blocking on sex, this source of variability is controlled for, thus leading to greater accuracy (EFO_0005067).</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+            </FIELD_GROUP>
+            <FIELD_GROUP restrictionType="Any number or none of the fields">
+                <NAME>Organism characteristics: genetic</NAME>
+                <FIELD>
+                    <LABEL>genotype</LABEL>
+                    <NAME>genotype</NAME>
+                    <DESCRIPTION>name or code for genotype of organism</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>recommended</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>genetic modification</LABEL>
+                    <NAME>genetic_modification</NAME>
+                    <DESCRIPTION>A genetic modification of the genome of an organism which may occur naturally by spontaneous mutation, or be introduced by some experimental means. Examples of genetic modification include specification of a transgene or the gene knocked-out or details of transient transfection.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+            </FIELD_GROUP>
+            <FIELD_GROUP restrictionType="Any number or none of the fields">
+                <NAME>sample processing</NAME>
+                <FIELD>
+                    <LABEL>protocol</LABEL>
+                    <NAME>protocol</NAME>
+                    <DESCRIPTION>The laboratory method used to reveal the presence of the sample sequenced in the experiment.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+            </FIELD_GROUP>
+            <FIELD_GROUP restrictionType="Any number or none of the fields">
+                <NAME>local environment conditions imposed</NAME>
+                <FIELD>
+                    <LABEL>environmental stress</LABEL>
+                    <NAME>environmental_stress</NAME>
+                    <DESCRIPTION>Environmental stress is a treatment where some aspect of the environment is perturbed in order to stress the organism or culture, e.g. change in temperature, change in watering regime.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>environmental history</LABEL>
+                    <NAME>environmental_history</NAME>
+                    <DESCRIPTION>Information concerning the envinonrment a material entity has been exposed to, such as an organism from a lake.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+                <FIELD>
+                    <LABEL>growth condition</LABEL>
+                    <NAME>growth_condition</NAME>
+                    <DESCRIPTION>A role that a material entity can play which enables particular conditions used to grow organisms or parts of the organism. This includes isolated environments such as cultures and open environments such as field studies.</DESCRIPTION>
+                    <FIELD_TYPE>
+                        <TEXT_FIELD/>
+                    </FIELD_TYPE>
+                    <MANDATORY>optional</MANDATORY>
+                    <MULTIPLICITY>single</MULTIPLICITY>
+                </FIELD>
+            </FIELD_GROUP>
+        </DESCRIPTOR>
+    </CHECKLIST>
+</CHECKLIST_SET>

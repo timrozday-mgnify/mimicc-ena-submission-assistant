@@ -4,8 +4,8 @@ A multi-user web app (single-user when ``DEPLOYMENT_MODE=local``):
 
   * accounts/sessions  -> ``auth`` + ``session_store`` over the Django ORM
     (Postgres); accounts are separate from ENA Webin credentials.
-  * studies/samples    -> ena-api-client + the ena-submission-dataharmonizer
-    submit scripts (via ``ena_service``), submitted server-side per user.
+  * studies/samples    -> ena-api-client + the ena-dh-scripts submit
+    scripts (via ``ena_service``), submitted server-side per user.
   * sample metadata    -> embedded DataHarmonizer (static bundle under /dh)
   * reads              -> uploaded DIRECT from the user's machine to ENA by the
     local ``read-helper`` (browser-bridged). The server only builds the manifest
