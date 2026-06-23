@@ -1,9 +1,9 @@
 """Locate the schema/XSD assets this app needs at runtime.
 
-``ena_api``, ``linkml_lib``, ``dh_builder_lib``, and the ena-dh submission
-scripts (``ena_common``, ``submit_sample``, ``submit_study``,
-``prepare_dh_output``) are pinned pip dependencies (see ``requirements.txt``)
-— plain ``import``s work without any ``sys.path`` setup.
+``ena_api``, ``linkml_lib``, ``dh_builder_lib``, and ``ena_submission_toolkit``
+(``common``, ``submit_sample``, ``submit_study``, ``prepare_dh_output``) are
+pinned pip dependencies (see ``requirements.txt``) — plain ``import``s work
+without any ``sys.path`` setup.
 
 What's left is locating the non-Python assets that ship alongside them: the
 MIMICC LinkML schemas (``schemas/``) and the ENA/SRA XSDs/checklists
