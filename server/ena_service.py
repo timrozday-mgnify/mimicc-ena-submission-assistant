@@ -1,4 +1,4 @@
-"""Service layer over ena-api-client and the ena-submission-dataharmonizer scripts.
+"""Service layer over ena-api-client and the ena-dh-scripts submission scripts.
 
 Wraps the existing reusable functions so the FastAPI endpoints stay thin:
 
@@ -21,7 +21,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-import _bootstrap  # side effect: extends sys.path to the vendored sibling code
+import _bootstrap  # schema/XSD asset paths — see _bootstrap.py
 
 if TYPE_CHECKING:  # pragma: no cover
     from ena_api import WebinClient

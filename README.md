@@ -2,7 +2,7 @@
 
 A web app for submitting **studies**, **samples**, and **sequencing reads** to
 the European Nucleotide Archive (ENA) for the
-[MIMICC](../ena-submission-dataharmonizer/mimicc) project.
+[MIMICC](../mimicc) project.
 
 It runs two ways from one codebase, selected by `DEPLOYMENT_MODE`:
 
@@ -18,9 +18,9 @@ It ties together three existing tools:
 
 | Concern | Reused from | How |
 |---|---|---|
-| Create/modify/list/delete **studies & samples** | [`ena-api-client`](../ena-api-client) + [`ena-submission-dataharmonizer`](../ena-submission-dataharmonizer) `scripts/` | `WebinClient` REST submission (server-side) + the `submit_study`/`submit_sample` batch builders |
+| Create/modify/list/delete **studies & samples** | [`ena-api-client`](../ena-api-client) + [`ena-dh-scripts`](https://github.com/timrozday-mgnify/ena-dh-scripts) | `WebinClient` REST submission (server-side) + the `submit_study`/`submit_sample` batch builders |
 | Enter **sample metadata** | [DataHarmonizer](../DataHarmonizer) | embedded spreadsheet UI (Samples tab) → export → filter/rename → submit |
-| Submit **reads** | [`webin-cli-browser-assistant`](../webin-cli-browser-assistant) | a local **[read-helper](https://github.com/timrozday-mgnify/read-helper)** runs `enasequence/webin-cli` on the user's machine; the browser bridges manifest (server) → helper → result (server) |
+| Submit **reads** | [`read-helper`](../read-helper) | a local **[read-helper](https://github.com/timrozday-mgnify/read-helper)** runs `enasequence/webin-cli` on the user's machine; the browser bridges manifest (server) → helper → result (server) |
 
 New glue added here:
 
@@ -64,8 +64,8 @@ Local read-helper (127.0.0.1:9100, https://github.com/timrozday-mgnify/read-help
 - **Reads**: the server builds the webin-cli manifest and the upload *plan*
   (what to upload vs. skip, via the ledger + ENA Reports API), but the upload
   itself runs on the user's machine in the [read-helper](https://github.com/timrozday-mgnify/read-helper)
-  (default sibling checkout path `../read-helper`, override with `READ_HELPER_DIR`
-  in `.env`) — reads never pass through the server.
+  (built from a pinned tag, see "Pinned dependency versions" below) — reads
+  never pass through the server.
 - **DH bundle rebuild** (`POST /api/dh/build`) still spawns the
   `dh-builder` sibling container, but is now **admin-only** and needs the
   Docker socket mounted on the server (off by default — the bundle is baked at
@@ -73,29 +73,23 @@ Local read-helper (127.0.0.1:9100, https://github.com/timrozday-mgnify/read-help
 
 ## Install & run
 
-Prerequisites: Docker Desktop, a `DataHarmonizer` checkout (default sibling
-path `../DataHarmonizer`, override with `DATAHARMONIZER_DIR` in `.env`), the
-shared `linkml-lib` checkout (default sibling path `../linkml-lib`, override
-with `LINKML_LIB_DIR` in `.env`), and a [`read-helper`](https://github.com/timrozday-mgnify/read-helper)
-checkout (default sibling path `../read-helper`, override with `READ_HELPER_DIR`
-in `.env`) if you want reads upload to work locally. Node/Yarn are **not**
-required on the host — the Docker build compiles the embedded DataHarmonizer
-bundle itself, in a dedicated build stage.
+Prerequisites: Docker Desktop. All sibling code (`DataHarmonizer`, `dh-builder`,
+`ena-dh-scripts`, `read-helper`, `linkml-lib`, `ena-api-client`,
+`dataharmonizer-template-builder`) is pulled automatically at pinned versions
+during `docker compose build` — no sibling checkouts to clone first. Node/Yarn
+are **not** required on the host either — the Docker build compiles the
+embedded DataHarmonizer bundle itself, in a dedicated build stage. The MIMICC
+schemas + ENA XSDs (`schemas/`, `assets/ena_schema/`) are committed directly
+in this repo — nothing to fetch for those either. See "Pinned dependency
+versions" below for where the sibling-repo pins live.
 
 ### Local (single user)
 
 ```bash
-# 1. Clone the read-helper sibling repo (needed for the "local" reads-upload profile)
-git clone https://github.com/timrozday-mgnify/read-helper.git ../read-helper
-
-# 2. Vendor sibling code into ./vendor
-#    (ena-api-client, ena-dh scripts/schemas/XSDs, and standalone linkml-lib)
-bash scripts/vendor.sh
-
-# 3. Configure (admin/admin + bundled Postgres by default)
+# 1. Configure (admin/admin + bundled Postgres by default)
 cp .env.example .env   # optional — sensible defaults work out of the box
 
-# 4. Start the app + Postgres + DH sidecar + the local read-helper.
+# 2. Start the app + Postgres + DH sidecar + the local read-helper.
 #    The "local" profile includes the read-helper so reads upload works on one box.
 COMPOSE_PROFILES=local docker compose up -d --build
 open http://localhost:9000
@@ -112,7 +106,6 @@ If port 9000 is already taken, set `MIMICC_PORT` in `.env` and open
 ### Hosted (multi-user)
 
 ```bash
-bash scripts/vendor.sh
 cp .env.example .env
 #   - set DEPLOYMENT_MODE=hosted
 #   - change ADMIN_PASSWORD and set a long DJANGO_SECRET_KEY
@@ -137,26 +130,24 @@ back to DH export upload instead, see "DataHarmonizer bundle build" below.
 ### DataHarmonizer bundle build
 
 The Samples tab embeds a built DataHarmonizer bundle (`server/static/dh/`) with
-the MIMICC template, carrying the LinkML schema vendored at
-`vendor/schemas/mimicc_sample.yaml` (filtered from `mimicc_sample_experiment.yaml`
+the MIMICC template, carrying the LinkML schema committed at
+`schemas/mimicc_sample.yaml` (filtered from `mimicc_sample_experiment.yaml`
 down to sample-scoped slots — see "Experiment metadata schema" below for the
-sibling experiment template and the filter mechanism). `docker compose build` produces
-this automatically via a `dh-builder` stage in the `Dockerfile` (Node + Yarn +
-the `DataHarmonizer` checkout supplied as the `dataharmonizer-src` build
-context — see `DATAHARMONIZER_DIR` in `.env.example`). If that checkout isn't
-available at build time, the build will fail; remove the `dh-builder` stage's
-`COPY --from=dh-builder` line in the final image (or point `DATAHARMONIZER_DIR`
-elsewhere) to build without it — the Samples tab still works via DH export
-upload either way.
+sibling experiment template and the filter mechanism). `docker compose build`
+produces this automatically via a `dh-builder` stage in the `Dockerfile` (Node +
+Yarn + a pinned `DataHarmonizer` checkout, cloned at build time — see
+`DATAHARMONIZER_REF` in the `Dockerfile`). If you need to build without it,
+remove the `dh-builder` stage's `COPY --from=dh-builder` line in the final
+image — the Samples tab still works via DH export upload either way.
 
 For local non-Docker development, `scripts/build_dh_template.sh` does the same
-build directly on the host (requires Node + Yarn there instead). Both this and
-the Dockerfile's `dh-builder` stage pull the actual build steps
-(`dh_build_steps.sh`) from the standalone
+build directly on the host (requires Node + Yarn there instead — see the
+script's usage comment for the env vars it expects) against this repo's
+committed `schemas/`. Both this script and the Dockerfile's `dh-builder` stage pull the
+actual build steps (`dh_build_steps.sh`) from the standalone
 [`dh-builder`](https://github.com/timrozday-mgnify/dh-builder) repo — its
-single canonical copy, not vendored here — via a `dh-builder-src` build
-context / `DH_BUILDER_DIR` sibling checkout (default `../dh-builder`), so they
-can't drift apart.
+single canonical copy, not vendored here — pinned to a tag (`DH_BUILDER_REF` in
+the `Dockerfile`), so they can't drift apart.
 
 #### On-demand rebuild
 
@@ -170,17 +161,17 @@ schema first) then streaming `GET /api/dh/build/stream/{job_id}` — without
 restarting the server or rebuilding the image; the result is immediately
 served at `/dh`. This spawns the `dh-builder` sibling container, built
 from the standalone [`dh-builder`](https://github.com/timrozday-mgnify/dh-builder)
-repo (build it once with:
+repo at its pinned tag (build it once with:
 
 ```bash
-git clone https://github.com/timrozday-mgnify/dh-builder.git ../dh-builder
-docker build -f ../dh-builder/Dockerfile \
-  --build-context dataharmonizer-src=../DataHarmonizer \
-  -t dh-builder ../dh-builder
+docker build \
+  --build-context dataharmonizer-src=https://github.com/timrozday-mgnify/DataHarmonizer.git#v2.1.0-mimicc \
+  -t dh-builder https://github.com/timrozday-mgnify/dh-builder.git#v0.1.0
 ```
 
-), mirroring how reads submission spawns `enasequence/webin-cli` via the
-[`read-helper`](https://github.com/timrozday-mgnify/read-helper) repo.
+— substitute the tags above with whatever's currently pinned in this repo's
+`Dockerfile`/`docker-compose.yml`), mirroring how reads submission spawns
+`enasequence/webin-cli` via the [`read-helper`](https://github.com/timrozday-mgnify/read-helper) repo.
 
 ### Schema library (Schema tab)
 
@@ -190,19 +181,19 @@ templates:
 
 - **Library** — schemas saved under `~/.mimicc-ena/schemas` (`/schemas` in the
   container; `SCHEMAS_CONTAINER_DIR`), seeded on first use from the bundled
-  `vendor/schemas/*.yaml`. Each row can be edited, used for the sample or
+  `schemas/*.yaml`. Each row can be edited, used for the sample or
   experiment grid, exported as a `.yaml` file, or deleted. You can also supply
   your own schema/checklist/XSD file from disk via the file picker.
-- **Build** — merges fields from bundled ENA sample checklists (`vendor/assets/
+- **Build** — merges fields from bundled ENA sample checklists (`assets/
   ena_schema/*.xml` and `.../checklists/*.xml`, fetched with
-  `scripts/fetch_ena_checklists.sh`), ENA/SRA XSDs (`vendor/assets/ena_schema/
+  `scripts/fetch_ena_checklists.sh`), ENA/SRA XSDs (`assets/ena_schema/
   *.xsd`), and/or existing saved schemas (`POST /api/schemas/import`, backed by
   `linkml_lib.pipeline.build` — the same XML/XSD→LinkML converters used
   elsewhere in this app). Earlier-selected sources win on conflicting fields.
 - **Edit** — the merged/loaded schema opens in an embedded
   [`dataharmonizer-template-builder`](../dataharmonizer-template-builder)
-  sidecar (the `dhtb` service in `docker-compose.yml`; build it from a sibling
-  checkout, or set `DHTB_DIR`), via its `postMessage` bridge
+  sidecar (the `dhtb` service in `docker-compose.yml`, built from a pinned
+  git URL — see "Pinned dependency versions" below), via its `postMessage` bridge
   (`dhtb.loadYaml` / `dhtb.exportYaml` / `dhtb.ready` / `dhtb.exported`/
   `dhtb.error` — see its own `docs/integration-contract.md`). Saving writes the
   exported YAML to the library (`POST /api/schemas`).
@@ -236,7 +227,7 @@ reopening a session the saved export is loaded **back into the grid** via
 
 **This requires `window.dataHarmonizer` to exist in the DataHarmonizer bundle** — vanilla
 DataHarmonizer doesn't expose it; it's a small patch applied directly to the `DataHarmonizer`
-checkout used as the `dataharmonizer-src` build context:
+checkout pinned as the `dataharmonizer-src` build context:
 - `lib/Toolbar.js`: `buildExportJson`/`getExportJson`/`loadExportJson` (full-grid export/import),
   plus a cell-level API (`getCellValue`, `setCellValue`, `findRowIndex`, `addRow`, `upsertRow`) used
   to sync individual columns without clobbering the rest of a row.
@@ -279,8 +270,9 @@ the standalone `linkml-lib` package's `linkml_lib.transform.filter`:
   first three aren't needed by webin-cli or are redundant with the pairing table; `TITLE`'s original
   `ifabsent` formula referenced sample-only slots not present in this schema).
 
-Both vendored at `vendor/schemas/` by `scripts/vendor.sh` (copies the whole `schemas/` directory —
-no per-file changes needed there). The experiment template build step still tolerates
+Both committed directly at `schemas/` in this repo (copied from
+`ena-submission-dataharmonizer`'s `schemas/` directory, no per-file changes
+needed there). The experiment template build step still tolerates
 `mimicc_experiment.yaml` being absent (gracefully falling back to sample-template-only), even though
 in practice both files now exist permanently.
 
@@ -372,10 +364,10 @@ button). Everything about a session is saved to disk and restored when you reope
 
 ```bash
 python -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt          # full stack (incl. Django, linkml) for all features
-pip install -e ../linkml-lib             # shared LinkML helpers
+pip install -r requirements.txt          # full stack incl. Django, linkml, and the
+                                          # pinned ena_api/linkml_lib/dh_builder_lib/
+                                          # ena-dh-scripts git dependencies
 pip install pytest pytest-asyncio anyio playwright
-bash scripts/vendor.sh                    # so ena_api / ena_common etc. import
 
 # Apply migrations. With no DATABASE_URL the ORM uses a local SQLite file
 # (.data/app.db); set DATABASE_URL=postgresql://… to use Postgres instead.
@@ -383,13 +375,18 @@ python manage.py migrate
 
 # Run the server locally (reads submission needs the local read-helper running;
 # other tabs work without it). DEPLOYMENT_MODE defaults to local (auto-login).
-PYTHONPATH=server:.:../linkml-lib/src uvicorn main:app --reload --port 9000 --app-dir server
+PYTHONPATH=server:. uvicorn main:app --reload --port 9000 --app-dir server
 ```
+
+The schemas/XSDs (`schemas/`, `assets/ena_schema/`) are committed directly in
+this repo, so no extra setup is needed for them — `server/_bootstrap.py`
+resolves them by default, with `ENA_DH_SCHEMA`/`ENA_DH_XSD`/
+`ENA_DH_SCHEMAS_DIR` available to override the paths if needed.
 
 ### Tests
 
 `pytest` (in-process ASGI API tests + read-assignment unit tests) and Playwright
-(UI), mirroring `webin-cli-browser-assistant`'s patterns. No Docker or network
+(UI), mirroring `read-helper`'s patterns. No Docker or network
 needed — the webin-cli runner and `ena_service` calls are mocked.
 
 ```bash
@@ -412,29 +409,53 @@ server/
   session_store.py     submission sessions + reads ledger, Django-ORM-backed, owner-scoped
   dh_builder_runner.py Docker-in-Docker adapter for the (admin-only) DH bundle rebuild
   schema_service.py    schema library: list/save/delete, ENA XML/XSD import/merge, grid selection
-  _bootstrap.py        puts vendored sibling code and linkml-lib on sys.path
+  _bootstrap.py        locates the committed schema/XSD assets (schemas/, assets/ena_schema/;
+                        sys.path is no longer needed for ena_api/linkml_lib/dh_builder_lib/
+                        ena-dh-scripts — they're pinned pip dependencies, see requirements.txt)
   static/              single-page UI (index.html, app.js) + DH bundle (dh/, volume-mounted)
 manage.py          Django management entrypoint (migrations)
+schemas/           committed MIMICC LinkML schemas (mimicc_sample.yaml, mimicc_experiment.yaml)
+assets/ena_schema/ committed ENA/SRA XSDs + checklist XMLs (checklists/ filled by fetch_ena_checklists.sh)
 scripts/
-  vendor.sh              copy sibling repos and standalone linkml-lib into ./vendor
   fetch_ena_checklists.sh fetch the full set of public ENA sample-checklist XMLs
   build_dh_template.sh   build the embedded DataHarmonizer bundle (local dev)
   server_entrypoint.sh   seeds the bind-mounted DH bundle/schema dirs on first run
 tests/             pytest + Playwright
-Dockerfile             builds the main server image (includes a dh-builder stage)
+Dockerfile             builds the main server image (includes a dh-builder stage and
+                       pinned git-clone stages for DataHarmonizer/dh-builder)
 docker-compose.yml
 ```
 
-`dh_builder_lib` (the Docker executor `dh_builder_runner.py` wraps), the
-Dockerfile for the `dh-builder` image (shared with
+`dh_builder_lib` (the Docker executor `dh_builder_runner.py` wraps, now a pinned pip
+dependency), the Dockerfile for the `dh-builder` image (shared with
 [dataharmonizer-template-builder](https://github.com/timrozday-mgnify/dataharmonizer-template-builder),
 which runs the same image with a different `TEMPLATE`), and `dh_build_steps.sh`
 (the shared DH build steps, also pulled in by the Dockerfile's embedded
 `dh-builder` stage and `scripts/build_dh_template.sh` above) all live in the
-standalone [`dh-builder`](https://github.com/timrozday-mgnify/dh-builder) repo
-(vendored via `scripts/vendor.sh`, default sibling path `../dh-builder`), the
-same way [`read-helper`](https://github.com/timrozday-mgnify/read-helper) does
-for reads upload.
+standalone [`dh-builder`](https://github.com/timrozday-mgnify/dh-builder) repo,
+pulled at a pinned tag the same way [`read-helper`](https://github.com/timrozday-mgnify/read-helper)
+is for reads upload.
+
+### Pinned dependency versions
+
+All sibling-repo code is pulled at a fixed git tag, never a local checkout or
+`main`/`master`. The pins live in two places:
+
+- **`requirements.txt`** — `ena-api-client`, `linkml-lib`, `dh-builder-lib`, and
+  `ena-dh-scripts` as
+  `name @ git+https://github.com/timrozday-mgnify/<repo>.git@<tag>` lines.
+- **`Dockerfile`** — `DATAHARMONIZER_REF` / `DH_BUILDER_REF` build
+  args, and **`docker-compose.yml`** — the `read-helper` and `dhtb` services'
+  `build.context`/`additional_contexts` git URLs (`...git#<tag>`, or
+  `...git#<tag>:<subdir>` for a subdirectory).
+
+The MIMICC schemas + ENA XSDs (`schemas/`, `assets/ena_schema/`) aren't
+pinned at all — they're committed directly in this repo, so they version
+along with everything else.
+
+To bump a pin: cut a new tag in the sibling repo, then update every reference
+to that repo's tag across these two files (`grep -rn timrozday-mgnify .` from
+the repo root finds them all).
 
 ## Notes
 

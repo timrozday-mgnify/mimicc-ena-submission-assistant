@@ -10,17 +10,15 @@
 #
 # Usage:
 #   DATAHARMONIZER=../DataHarmonizer \
-#   ENA_DH=../ena-submission-dataharmonizer \
 #   DH_BUILDER_DIR=../dh-builder \
 #   bash scripts/build_dh_template.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATAHARMONIZER="${DATAHARMONIZER:-$ROOT/../DataHarmonizer}"
-ENA_DH="${ENA_DH:-$ROOT/../ena-submission-dataharmonizer}"
 DH_BUILDER_DIR="${DH_BUILDER_DIR:-$ROOT/../dh-builder}"
-SCHEMA="${ENA_DH_SCHEMA:-$ENA_DH/schemas/mimicc_sample.yaml}"
-EXPERIMENT_SCHEMA="${ENA_DH_EXPERIMENT_SCHEMA:-$ENA_DH/schemas/mimicc_experiment.yaml}"
+SCHEMA="${ENA_DH_SCHEMA:-$ROOT/schemas/mimicc_sample.yaml}"
+EXPERIMENT_SCHEMA="${ENA_DH_EXPERIMENT_SCHEMA:-$ROOT/schemas/mimicc_experiment.yaml}"
 TEMPLATE="mimicc"
 DEST="$ROOT/server/static/dh"
 
