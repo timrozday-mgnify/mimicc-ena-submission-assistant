@@ -152,7 +152,10 @@ upload either way.
 For local non-Docker development, `scripts/build_dh_template.sh` does the same
 build directly on the host (requires Node + Yarn there instead). Both share
 the actual build steps (`scripts/dh_build_steps.sh`) with the Dockerfile's
-`dh-builder` stage and `Dockerfile.dh-builder`, so they can't drift apart.
+`dh-builder` stage, and with the [`dh-builder`](https://github.com/timrozday-mgnify/dh-builder)
+repo's image (pulled in there via an additional `mimicc-scripts` build
+context pointing back at this `scripts/` directory), so the three can't drift
+apart.
 
 #### On-demand rebuild
 
@@ -164,10 +167,20 @@ run. This means a rebuild can be triggered at runtime — via
 `POST /api/dh/build` (optionally with a `schema_yaml` body to overwrite the
 schema first) then streaming `GET /api/dh/build/stream/{job_id}` — without
 restarting the server or rebuilding the image; the result is immediately
-served at `/dh`. This spawns the `mimicc-dh-builder` sibling container
-(build it once with `docker build -f Dockerfile.dh-builder --build-context
-dataharmonizer-src=../DataHarmonizer -t mimicc-dh-builder .`), mirroring how
-reads submission spawns `enasequence/webin-cli`.
+served at `/dh`. This spawns the `mimicc-dh-builder` sibling container, built
+from the standalone [`dh-builder`](https://github.com/timrozday-mgnify/dh-builder)
+repo (build it once with:
+
+```bash
+git clone https://github.com/timrozday-mgnify/dh-builder.git ../dh-builder
+docker build -f ../dh-builder/Dockerfile \
+  --build-context dataharmonizer-src=../DataHarmonizer \
+  --build-context mimicc-scripts=./scripts \
+  -t mimicc-dh-builder ../dh-builder
+```
+
+), mirroring how reads submission spawns `enasequence/webin-cli` via the
+[`read-helper`](https://github.com/timrozday-mgnify/read-helper) repo.
 
 ### Schema library (Schema tab)
 
@@ -402,19 +415,24 @@ server/
   _bootstrap.py        puts vendored sibling code and linkml-lib on sys.path
   static/              single-page UI (index.html, app.js) + DH bundle (dh/, volume-mounted)
 manage.py          Django management entrypoint (migrations)
-dh_builder_lib/    mimicc-dh-builder Docker executor
 scripts/
   vendor.sh              copy sibling repos and standalone linkml-lib into ./vendor
   fetch_ena_checklists.sh fetch the full set of public ENA sample-checklist XMLs
   build_dh_template.sh   build the embedded DataHarmonizer bundle (local dev)
-  dh_build_steps.sh       shared DH build steps (used by the above + both Dockerfiles)
-  dh_builder_entrypoint.sh entrypoint for the mimicc-dh-builder image
+  dh_build_steps.sh       shared DH build steps (used by the above, the Dockerfile's
+                          dh-builder stage, and the standalone dh-builder repo)
   server_entrypoint.sh   seeds the bind-mounted DH bundle/schema dirs on first run
 tests/             pytest + Playwright
 Dockerfile             builds the main server image (includes a dh-builder stage)
-Dockerfile.dh-builder  builds the on-demand DH-rebuild sibling image
 docker-compose.yml
 ```
+
+`dh_builder_lib` (the Docker executor `dh_builder_runner.py` wraps) and the
+Dockerfile for the `mimicc-dh-builder` image live in the standalone
+[`dh-builder`](https://github.com/timrozday-mgnify/dh-builder) repo (vendored
+via `scripts/vendor.sh`, default sibling path `../dh-builder`), the same way
+[`read-helper`](https://github.com/timrozday-mgnify/read-helper) does for
+reads upload.
 
 ## Notes
 

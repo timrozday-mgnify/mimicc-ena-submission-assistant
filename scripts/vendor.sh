@@ -6,6 +6,7 @@
 #   ENA_API_CLIENT=../ena-api-client \
 #   ENA_DH=../ena-submission-dataharmonizer \
 #   LINKML_LIB=../linkml-lib \
+#   DH_BUILDER=../dh-builder \
 #   bash scripts/vendor.sh
 set -euo pipefail
 
@@ -13,11 +14,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENA_API_CLIENT="${ENA_API_CLIENT:-$ROOT/../ena-api-client}"
 ENA_DH="${ENA_DH:-$ROOT/../ena-submission-dataharmonizer}"
 LINKML_LIB="${LINKML_LIB:-$ROOT/../linkml-lib}"
+DH_BUILDER="${DH_BUILDER:-$ROOT/../dh-builder}"
 VENDOR="$ROOT/vendor"
 
 echo "ena-api-client: $ENA_API_CLIENT"
 echo "ena-dh:         $ENA_DH"
 echo "linkml-lib:     $LINKML_LIB"
+echo "dh-builder:     $DH_BUILDER"
 echo "vendor:         $VENDOR"
 
 rm -rf "$VENDOR"
@@ -35,6 +38,10 @@ done
 # Shared LinkML utilities. This intentionally comes from the standalone
 # linkml-lib package, not from ena-submission-dataharmonizer/scripts/linkml_lib.
 cp -R "$LINKML_LIB/src/linkml_lib" "$VENDOR/linkml_lib"
+
+# dh_builder_lib package (added to sys.path => `import dh_builder_lib`), from
+# the standalone dh-builder repo.
+cp -R "$DH_BUILDER/dh_builder_lib" "$VENDOR/dh_builder_lib"
 
 # Schemas + ENA XSDs used for sample/study build + validation
 cp -R "$ENA_DH/schemas" "$VENDOR/schemas"

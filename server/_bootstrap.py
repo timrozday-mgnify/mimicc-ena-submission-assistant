@@ -6,6 +6,7 @@ This app reuses code from two sibling repositories:
   * ``ena-submission-dataharmonizer``  -> ``ena_common``, ``submit_sample``,
     ``submit_study`` and ``prepare_dh_output``
   * ``linkml-lib``                     -> the ``linkml_lib`` package.
+  * ``dh-builder``                     -> the ``dh_builder_lib`` package.
 
 ``scripts/vendor.sh`` copies these into ``./vendor`` for the Docker image. For
 local development we fall back to the sibling checkouts next to this repo.
@@ -57,7 +58,13 @@ _ENA_API_ROOT = _first_existing(
     _SIBLINGS / "ena-api-client" if (_SIBLINGS / "ena-api-client" / "ena_api").exists() else None,
 )
 
-for _p in (_ENA_API_ROOT, SCRIPTS_DIR, LINKML_LIB_ROOT):
+DH_BUILDER_ROOT = _first_existing(
+    _env_path("DH_BUILDER_ROOT"),
+    _VENDOR if (_VENDOR / "dh_builder_lib").exists() else None,
+    _SIBLINGS / "dh-builder" if (_SIBLINGS / "dh-builder" / "dh_builder_lib").exists() else None,
+)
+
+for _p in (_ENA_API_ROOT, SCRIPTS_DIR, LINKML_LIB_ROOT, DH_BUILDER_ROOT):
     if _p is not None and str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
