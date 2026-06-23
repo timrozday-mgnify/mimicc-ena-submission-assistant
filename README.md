@@ -67,7 +67,7 @@ Local read-helper (127.0.0.1:9100, https://github.com/timrozday-mgnify/read-help
   (default sibling checkout path `../read-helper`, override with `READ_HELPER_DIR`
   in `.env`) — reads never pass through the server.
 - **DH bundle rebuild** (`POST /api/dh/build`) still spawns the
-  `mimicc-dh-builder` sibling container, but is now **admin-only** and needs the
+  `dh-builder` sibling container, but is now **admin-only** and needs the
   Docker socket mounted on the server (off by default — the bundle is baked at
   image-build time).
 
@@ -168,7 +168,7 @@ run. This means a rebuild can be triggered at runtime — via
 `POST /api/dh/build` (optionally with a `schema_yaml` body to overwrite the
 schema first) then streaming `GET /api/dh/build/stream/{job_id}` — without
 restarting the server or rebuilding the image; the result is immediately
-served at `/dh`. This spawns the `mimicc-dh-builder` sibling container, built
+served at `/dh`. This spawns the `dh-builder` sibling container, built
 from the standalone [`dh-builder`](https://github.com/timrozday-mgnify/dh-builder)
 repo (build it once with:
 
@@ -176,7 +176,7 @@ repo (build it once with:
 git clone https://github.com/timrozday-mgnify/dh-builder.git ../dh-builder
 docker build -f ../dh-builder/Dockerfile \
   --build-context dataharmonizer-src=../DataHarmonizer \
-  -t mimicc-dh-builder ../dh-builder
+  -t dh-builder ../dh-builder
 ```
 
 ), mirroring how reads submission spawns `enasequence/webin-cli` via the
@@ -426,8 +426,10 @@ docker-compose.yml
 ```
 
 `dh_builder_lib` (the Docker executor `dh_builder_runner.py` wraps), the
-Dockerfile for the `mimicc-dh-builder` image, and `dh_build_steps.sh` (the
-shared DH build steps, also pulled in by the Dockerfile's embedded
+Dockerfile for the `dh-builder` image (shared with
+[dataharmonizer-template-builder](https://github.com/timrozday-mgnify/dataharmonizer-template-builder),
+which runs the same image with a different `TEMPLATE`), and `dh_build_steps.sh`
+(the shared DH build steps, also pulled in by the Dockerfile's embedded
 `dh-builder` stage and `scripts/build_dh_template.sh` above) all live in the
 standalone [`dh-builder`](https://github.com/timrozday-mgnify/dh-builder) repo
 (vendored via `scripts/vendor.sh`, default sibling path `../dh-builder`), the
