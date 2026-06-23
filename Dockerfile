@@ -35,10 +35,10 @@ COPY --from=linkml-lib . /linkml-lib
 COPY requirements.txt .
 RUN pip install --no-cache-dir /linkml-lib && pip install --no-cache-dir -r requirements.txt
 
-# Vendored sibling code (populated by scripts/vendor.sh before building).
+# Vendored sibling code (populated by scripts/vendor.sh before building),
+# including dh_builder_lib.
 COPY vendor/ vendor/
 # App code
-COPY dh_builder_lib/ dh_builder_lib/
 COPY server/ server/
 # Django ORM management entrypoint (migrations).
 COPY manage.py manage.py
