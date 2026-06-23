@@ -86,14 +86,15 @@ services:
 
   # Local reads upload helper. Only started for fully-local single-user use
   # (profile "local"); in a hosted deployment each user runs the helper on their
-  # own workstation instead (see read-helper/). Start it locally with:
+  # own workstation instead (see https://github.com/timrozday-mgnify/read-helper).
+  # Start it locally with:
   #   COMPOSE_PROFILES=local docker compose up -d --build
   read-helper:
     profiles: ["local"]
     # See mimicc-server's platform comment above.
     platform: ${MIMICC_PLATFORM:-linux/arm64}
     build:
-      context: ./read-helper
+      context: ${READ_HELPER_DIR:-../read-helper}
     container_name: mimicc-read-helper
     ports:
       - "127.0.0.1:${HELPER_PORT:-9100}:9100"

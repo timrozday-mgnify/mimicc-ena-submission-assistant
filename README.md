@@ -20,7 +20,7 @@ It ties together three existing tools:
 |---|---|---|
 | Create/modify/list/delete **studies & samples** | [`ena-api-client`](../ena-api-client) + [`ena-submission-dataharmonizer`](../ena-submission-dataharmonizer) `scripts/` | `WebinClient` REST submission (server-side) + the `submit_study`/`submit_sample` batch builders |
 | Enter **sample metadata** | [DataHarmonizer](../DataHarmonizer) | embedded spreadsheet UI (Samples tab) → export → filter/rename → submit |
-| Submit **reads** | [`webin-cli-browser-assistant`](../webin-cli-browser-assistant) | a local **read-helper** runs `enasequence/webin-cli` on the user's machine; the browser bridges manifest (server) → helper → result (server) |
+| Submit **reads** | [`webin-cli-browser-assistant`](../webin-cli-browser-assistant) | a local **[read-helper](https://github.com/timrozday-mgnify/read-helper)** runs `enasequence/webin-cli` on the user's machine; the browser bridges manifest (server) → helper → result (server) |
 
 New glue added here:
 
@@ -49,7 +49,7 @@ Browser ── login cookie ──► FastAPI server (server/main.py)
    │  fetch manifest + plan ◄─┘
    │  POST manifest + Webin creds
    ▼
-Local read-helper (127.0.0.1:9100, read-helper/) ── docker run enasequence/webin-cli ──► ENA dropbox
+Local read-helper (127.0.0.1:9100, https://github.com/timrozday-mgnify/read-helper) ── docker run enasequence/webin-cli ──► ENA dropbox
    │  SSE log stream ─► Browser ─► POST /api/reads/result (server updates the resume ledger)
 ```
 
@@ -63,8 +63,9 @@ Local read-helper (127.0.0.1:9100, read-helper/) ── docker run enasequence/w
   who can manage other accounts (Admin tab). Web logins are DB-backed cookies.
 - **Reads**: the server builds the webin-cli manifest and the upload *plan*
   (what to upload vs. skip, via the ledger + ENA Reports API), but the upload
-  itself runs on the user's machine in the [read-helper](read-helper/) — reads
-  never pass through the server.
+  itself runs on the user's machine in the [read-helper](https://github.com/timrozday-mgnify/read-helper)
+  (default sibling checkout path `../read-helper`, override with `READ_HELPER_DIR`
+  in `.env`) — reads never pass through the server.
 - **DH bundle rebuild** (`POST /api/dh/build`) still spawns the
   `mimicc-dh-builder` sibling container, but is now **admin-only** and needs the
   Docker socket mounted on the server (off by default — the bundle is baked at
@@ -73,23 +74,28 @@ Local read-helper (127.0.0.1:9100, read-helper/) ── docker run enasequence/w
 ## Install & run
 
 Prerequisites: Docker Desktop, a `DataHarmonizer` checkout (default sibling
-path `../DataHarmonizer`, override with `DATAHARMONIZER_DIR` in `.env`), and
-the shared `linkml-lib` checkout (default sibling path `../linkml-lib`, override
-with `LINKML_LIB_DIR` in `.env`). Node/Yarn are **not** required on the host —
-the Docker build compiles the embedded DataHarmonizer bundle itself, in a
-dedicated build stage.
+path `../DataHarmonizer`, override with `DATAHARMONIZER_DIR` in `.env`), the
+shared `linkml-lib` checkout (default sibling path `../linkml-lib`, override
+with `LINKML_LIB_DIR` in `.env`), and a [`read-helper`](https://github.com/timrozday-mgnify/read-helper)
+checkout (default sibling path `../read-helper`, override with `READ_HELPER_DIR`
+in `.env`) if you want reads upload to work locally. Node/Yarn are **not**
+required on the host — the Docker build compiles the embedded DataHarmonizer
+bundle itself, in a dedicated build stage.
 
 ### Local (single user)
 
 ```bash
-# 1. Vendor sibling code into ./vendor
+# 1. Clone the read-helper sibling repo (needed for the "local" reads-upload profile)
+git clone https://github.com/timrozday-mgnify/read-helper.git ../read-helper
+
+# 2. Vendor sibling code into ./vendor
 #    (ena-api-client, ena-dh scripts/schemas/XSDs, and standalone linkml-lib)
 bash scripts/vendor.sh
 
-# 2. Configure (admin/admin + bundled Postgres by default)
+# 3. Configure (admin/admin + bundled Postgres by default)
 cp .env.example .env   # optional — sensible defaults work out of the box
 
-# 3. Start the app + Postgres + DH sidecar + the local read-helper.
+# 4. Start the app + Postgres + DH sidecar + the local read-helper.
 #    The "local" profile includes the read-helper so reads upload works on one box.
 COMPOSE_PROFILES=local docker compose up -d --build
 open http://localhost:9000
@@ -120,9 +126,9 @@ Put the app behind a TLS-terminating reverse proxy (the login cookie is marked
 `admin`, then create user accounts from the **Admin** tab. Each user has their
 own private sessions and submissions.
 
-Each user installs and runs the [read-helper](read-helper/) on their **own
-workstation** (it is what uploads their reads directly to ENA). See
-`read-helper/README.md`; point its `MIMICC_APP_ORIGIN` at your hosted app so the
+Each user installs and runs the [read-helper](https://github.com/timrozday-mgnify/read-helper)
+on their **own workstation** (it is what uploads their reads directly to ENA).
+See its README; point its `MIMICC_APP_ORIGIN` at your hosted app so the
 browser page is allowed to drive the loopback helper.
 
 If you don't have a `DataHarmonizer` checkout, or want the Samples tab to fall
@@ -396,7 +402,6 @@ server/
   _bootstrap.py        puts vendored sibling code and linkml-lib on sys.path
   static/              single-page UI (index.html, app.js) + DH bundle (dh/, volume-mounted)
 manage.py          Django management entrypoint (migrations)
-read-helper/       local reads upload helper (runs webin-cli on the user's machine)
 dh_builder_lib/    mimicc-dh-builder Docker executor
 scripts/
   vendor.sh              copy sibling repos and standalone linkml-lib into ./vendor
