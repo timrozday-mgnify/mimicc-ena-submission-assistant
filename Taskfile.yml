@@ -32,3 +32,24 @@ tasks:
     desc: Tail logs for all (or a named) service
     cmds:
       - docker compose logs -f {{.CLI_ARGS}}
+
+  rebuild:dh:
+    desc: >
+      Deep-rebuild mimicc-server and dhtb after editing ../DataHarmonizer or
+      ../dataharmonizer-template-builder. Plain `task build`/`up --build` is NOT
+      enough for changes to those sibling checkouts: (1) Docker's layer cache
+      can skip the `COPY --from=dataharmonizer-src` step even when the source
+      content changed, and (2) the built DH bundle is seeded into the
+      mimicc-dh-bundle named volume only once, on first run — a fresh image
+      alone never reaches a container that already has that volume populated.
+      This forces a --no-cache image build and drops the stale volume so the
+      next start re-seeds it from the new image.
+    cmds:
+      - unset DOCKER_DEFAULT_PLATFORM && docker compose build --no-cache mimicc-server dhtb
+      - unset DOCKER_DEFAULT_PLATFORM && docker compose stop mimicc-server dhtb
+      # rm releases the container's lock on the dh-bundle volume so it can be removed below
+      - unset DOCKER_DEFAULT_PLATFORM && docker compose rm -f mimicc-server dhtb
+      - |
+        vol=$(docker volume ls -q --filter "name=mimicc-dh-bundle")
+        if [ -n "$vol" ]; then docker volume rm $vol; fi
+      - unset DOCKER_DEFAULT_PLATFORM && docker compose up -d mimicc-server dhtb {{.CLI_ARGS}}
