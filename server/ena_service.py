@@ -1,4 +1,4 @@
-"""Service layer over ena-api-client and the ena-dh-scripts submission scripts.
+"""Service layer over ena-api-client and ena-submission-toolkit.
 
 Wraps the existing reusable functions so the FastAPI endpoints stay thin:
 
@@ -55,7 +55,7 @@ def _ena_api():
 
 
 def _common():
-    import ena_common as common  # type: ignore
+    from ena_submission_toolkit import common  # type: ignore
 
     return common
 
@@ -182,7 +182,7 @@ def submit_studies(
     max_results: int = 5000,
 ) -> dict[str, Any]:
     """Create (ADD) or modify (MODIFY) studies. Returns {success, accessions}."""
-    import submit_study  # type: ignore
+    from ena_submission_toolkit import submit_study  # type: ignore
 
     common = _common()
     if hold_until:
@@ -223,7 +223,7 @@ def submit_samples(
     max_results: int = 5000,
 ) -> dict[str, Any]:
     """Create (ADD) or modify (MODIFY) samples. Returns {success, accessions}."""
-    import submit_sample  # type: ignore
+    from ena_submission_toolkit import submit_sample  # type: ignore
     from linkml_lib import io as linkml_io  # type: ignore
     from linkml_lib import schema as linkml_schema  # type: ignore
 
@@ -286,7 +286,7 @@ def prepare_samples(dh_export: dict[str, Any], *, where: str | None = DEFAULT_SA
     ``prepare_dh_output.prepare_data`` (the pure in-memory variant — no
     temp-file round trip needed). Returns the full ``Container``-wrapped dict.
     """
-    import prepare_dh_output  # type: ignore
+    from ena_submission_toolkit import prepare_dh_output  # type: ignore
     from linkml_lib import dh_data  # type: ignore
     from linkml_lib import io as linkml_io  # type: ignore
 

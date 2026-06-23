@@ -50,9 +50,9 @@ RUN apt-get update && apt-get install -y docker.io curl && rm -rf /var/lib/apt/l
 
 WORKDIR /app
 
-# ena_api, linkml_lib, dh_builder_lib and the ena-dh-scripts submission
-# scripts are pinned pip dependencies (see requirements.txt) — no local
-# build context or vendor.sh copy needed for them anymore.
+# ena_api, linkml_lib, dh_builder_lib and ena_submission_toolkit are pinned
+# pip dependencies (see requirements.txt) — no local build context or
+# vendor.sh copy needed for them anymore.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

@@ -18,7 +18,7 @@ It ties together three existing tools:
 
 | Concern | Reused from | How |
 |---|---|---|
-| Create/modify/list/delete **studies & samples** | [`ena-api-client`](../ena-api-client) + [`ena-dh-scripts`](https://github.com/timrozday-mgnify/ena-dh-scripts) | `WebinClient` REST submission (server-side) + the `submit_study`/`submit_sample` batch builders |
+| Create/modify/list/delete **studies & samples** | [`ena-api-client`](../ena-api-client) + [`ena-submission-toolkit`](https://github.com/timrozday-mgnify/ena-submission-toolkit) | `WebinClient` REST submission (server-side) + the `submit_study`/`submit_sample` batch builders |
 | Enter **sample metadata** | [DataHarmonizer](../DataHarmonizer) | embedded spreadsheet UI (Samples tab) → export → filter/rename → submit |
 | Submit **reads** | [`read-helper`](../read-helper) | a local **[read-helper](https://github.com/timrozday-mgnify/read-helper)** runs `enasequence/webin-cli` on the user's machine; the browser bridges manifest (server) → helper → result (server) |
 
@@ -74,7 +74,7 @@ Local read-helper (127.0.0.1:9100, https://github.com/timrozday-mgnify/read-help
 ## Install & run
 
 Prerequisites: Docker Desktop. All sibling code (`DataHarmonizer`, `dh-builder`,
-`ena-dh-scripts`, `read-helper`, `linkml-lib`, `ena-api-client`,
+`ena-submission-toolkit`, `read-helper`, `linkml-lib`, `ena-api-client`,
 `dataharmonizer-template-builder`) is pulled automatically at pinned versions
 during `docker compose build` — no sibling checkouts to clone first. Node/Yarn
 are **not** required on the host either — the Docker build compiles the
@@ -366,7 +366,7 @@ button). Everything about a session is saved to disk and restored when you reope
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt          # full stack incl. Django, linkml, and the
                                           # pinned ena_api/linkml_lib/dh_builder_lib/
-                                          # ena-dh-scripts git dependencies
+                                          # ena-submission-toolkit git dependencies
 pip install pytest pytest-asyncio anyio playwright
 
 # Apply migrations. With no DATABASE_URL the ORM uses a local SQLite file
@@ -411,7 +411,7 @@ server/
   schema_service.py    schema library: list/save/delete, ENA XML/XSD import/merge, grid selection
   _bootstrap.py        locates the committed schema/XSD assets (schemas/, assets/ena_schema/;
                         sys.path is no longer needed for ena_api/linkml_lib/dh_builder_lib/
-                        ena-dh-scripts — they're pinned pip dependencies, see requirements.txt)
+                        ena-submission-toolkit — they're pinned pip dependencies, see requirements.txt)
   static/              single-page UI (index.html, app.js) + DH bundle (dh/, volume-mounted)
 manage.py          Django management entrypoint (migrations)
 schemas/           committed MIMICC LinkML schemas (mimicc_sample.yaml, mimicc_experiment.yaml)
@@ -442,7 +442,7 @@ All sibling-repo code is pulled at a fixed git tag, never a local checkout or
 `main`/`master`. The pins live in two places:
 
 - **`requirements.txt`** — `ena-api-client`, `linkml-lib`, `dh-builder-lib`, and
-  `ena-dh-scripts` as
+  `ena-submission-toolkit` as
   `name @ git+https://github.com/timrozday-mgnify/<repo>.git@<tag>` lines.
 - **`Dockerfile`** — `DATAHARMONIZER_REF` / `DH_BUILDER_REF` build
   args, and **`docker-compose.yml`** — the `read-helper` and `dhtb` services'
