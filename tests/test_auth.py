@@ -2,17 +2,14 @@
 
 The default test deployment mode is ``local`` (auto-login as admin). These tests
 flip ``DEPLOYMENT_MODE=hosted`` to exercise the real login/cookie path, so they
-use an HTTPS base URL (so the Secure login cookie is retained) and send the
-``X-Requested-With`` header that the CSRF guard requires.
+use ``secure=True`` (so the Secure login cookie is retained).
 """
 
 from __future__ import annotations
 
-import httpx
-import main as _main
 import pytest
-
-_HEADERS = {"X-Requested-With": "fetch"}
+from conftest import AsyncClient
+from django.test import Client as DjangoClient
 
 
 @pytest.fixture
@@ -21,10 +18,8 @@ def hosted(monkeypatch):
 
 
 @pytest.fixture
-async def hclient(hosted):
-    transport = httpx.ASGITransport(app=_main.app)
-    async with httpx.AsyncClient(transport=transport, base_url="https://test", headers=_HEADERS) as c:
-        yield c
+def hclient(hosted):
+    return AsyncClient(secure=True)
 
 
 async def _login(c, username="admin", password="admin"):
@@ -65,13 +60,12 @@ async def test_login_rejects_bad_password(hclient):
     assert (await _login(hclient, password="wrong")).status_code == 401
 
 
-async def test_csrf_blocks_state_change_without_header(hosted):
-    # No X-Requested-With header -> blocked in hosted mode.
-    transport = httpx.ASGITransport(app=_main.app)
-    async with httpx.AsyncClient(transport=transport, base_url="https://test") as c:
-        await c.post("/api/auth/login", json={"username": "admin", "password": "admin"})  # login is exempt
-        r = await c.post("/api/sessions", json={"name": "x"})
-        assert r.status_code == 403
+def test_csrf_blocks_state_change_without_token(hosted):
+    # No CSRF token -> blocked in hosted mode (Django's CsrfViewMiddleware).
+    c = DjangoClient(enforce_csrf_checks=True)
+    c.post("/api/auth/login", data='{"username": "admin", "password": "admin"}', content_type="application/json")
+    r = c.post("/api/sessions", data='{"name": "x"}', content_type="application/json")
+    assert r.status_code == 403
 
 
 # ---------------------------------------------------------------------------

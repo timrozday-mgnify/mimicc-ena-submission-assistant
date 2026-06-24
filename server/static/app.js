@@ -16,11 +16,16 @@ const $ = (id) => document.getElementById(id);
 let HELPER_BASE = "";       // base URL of the local reads upload helper, e.g. http://localhost:9100
 let HELPER_OK = false;      // whether the helper is currently reachable
 
+// Echoes Django's csrftoken cookie back as a header, satisfying CsrfViewMiddleware
+// in hosted mode; a cross-site request cannot read this same-origin cookie.
+function csrfHeaders() {
+  const m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/);
+  return m ? { "X-CSRFToken": decodeURIComponent(m[1]) } : {};
+}
+
 async function api(path, opts = {}) {
   const res = await fetch(path, {
-    // X-Requested-With satisfies the server's CSRF guard in hosted mode; it is
-    // a header a cross-site <form> post cannot set.
-    headers: { "Content-Type": "application/json", "X-Requested-With": "fetch" },
+    headers: { "Content-Type": "application/json", ...csrfHeaders() },
     credentials: "same-origin",
     ...opts,
   });
@@ -817,7 +822,7 @@ async function buildImportedSchema() {
   const name = $("schemaImportName").value.trim();
   if (name) form.append("name", name);
   try {
-    const res = await fetch("/api/schemas/import", { method: "POST", body: form });
+    const res = await fetch("/api/schemas/import", { method: "POST", body: form, headers: csrfHeaders(), credentials: "same-origin" });
     const body = await res.json();
     if (!res.ok) throw new Error(body.detail || `HTTP ${res.status}`);
     $("schemaSaveName").value = name || "";
@@ -831,7 +836,7 @@ function importSchemaFile() {
   if (!f) return;
   const form = new FormData();
   form.append("file", f);
-  fetch("/api/schemas/import-file", { method: "POST", body: form })
+  fetch("/api/schemas/import-file", { method: "POST", body: form, headers: csrfHeaders(), credentials: "same-origin" })
     .then(async (res) => {
       const body = await res.json();
       if (!res.ok) throw new Error(body.detail || `HTTP ${res.status}`);

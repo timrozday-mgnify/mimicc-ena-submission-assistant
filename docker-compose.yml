@@ -20,6 +20,16 @@ services:
       retries: 20
     restart: unless-stopped
 
+  # Per-user Webin credentials cache (see server/credentials_store.py), only
+  # needed for multi-worker hosted deployments (set REDIS_URL to use it).
+  # Persistence is disabled so credentials are never written to disk, matching
+  # the original in-process-only design intent; a TTL is the backstop.
+  redis:
+    image: redis:7-alpine
+    container_name: mimicc-redis
+    command: redis-server --save "" --appendonly no
+    restart: unless-stopped
+
   mimicc-server:
     # Pinned so this project builds natively (no QEMU emulation) even when
     # DOCKER_DEFAULT_PLATFORM=linux/amd64 is set globally for other projects.
@@ -42,18 +52,14 @@ services:
     ports:
       - "127.0.0.1:${MIMICC_PORT:-9000}:9000"
     volumes:
-      # NB: the app no longer mounts the host Docker socket, the whole host
+      # NB: the app doesn't mount the host Docker socket, the whole host
       # (/hostroot) or a reads workspace — reads upload happens on the user's
-      # machine via the read-helper, and sessions live in Postgres. (Re-adding
-      # the Docker socket is only needed for the admin-only on-demand DH bundle
-      # rebuild; the bundle is otherwise baked at image-build time.)
+      # machine via the read-helper, and sessions live in Postgres.
       #
       # Built DataHarmonizer bundle, served at /dh. Bind-mounted (rather than
       # baked into the image) so it can be updated in place; seeded from the
       # image's build-time bundle on first run (scripts/server_entrypoint.sh).
       - ${MIMICC_DH_BUNDLE_DIR:-mimicc-dh-bundle}:/app/server/static/dh
-      # Editable LinkML schema used to rebuild the DH bundle on demand.
-      - ${MIMICC_DH_SCHEMA_DIR:-mimicc-dh-schema}:/dh-schema
       # Schema library: saved/imported LinkML schemas backing the grids.
       - ${MIMICC_SCHEMAS_DIR:-mimicc-schemas}:/schemas
     environment:
@@ -71,12 +77,10 @@ services:
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
       # Loopback port the browser expects the local read-helper on.
       - HELPER_PORT=${HELPER_PORT:-9100}
-      # Host paths backing the DH bundle/schema mounts (admin on-demand rebuild)
-      # and container paths the server reads them through.
-      - HOST_DH_OUTPUT_DIR=${MIMICC_DH_BUNDLE_DIR:-mimicc-dh-bundle}
-      - HOST_DH_SCHEMA_DIR=${MIMICC_DH_SCHEMA_DIR:-mimicc-dh-schema}
-      - DH_SCHEMA_CONTAINER_DIR=/dh-schema
       - SCHEMAS_CONTAINER_DIR=/schemas
+      # Per-user Webin credentials cache (see server/credentials_store.py).
+      # Unset in local/single-process use: falls back to in-process LocMemCache.
+      - REDIS_URL=${REDIS_URL:-}
       # Browser-reachable URL of the dhtb sidecar (the browser talks to it
       # directly, not through this container) — see /api/health: dhtb_url.
       - DHTB_URL=http://localhost:${MIMICC_DHTB_PORT:-8765}
@@ -129,5 +133,4 @@ services:
 volumes:
   mimicc-db-data:
   mimicc-dh-bundle:
-  mimicc-dh-schema:
   mimicc-schemas:

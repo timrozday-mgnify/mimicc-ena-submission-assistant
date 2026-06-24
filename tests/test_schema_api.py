@@ -11,7 +11,7 @@ import pytest
 
 pytest.importorskip("linkml")
 
-import main as _main  # noqa: E402
+import views_core  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -94,7 +94,7 @@ async def test_import_file_accepts_an_uploaded_yaml(client):
 
 async def test_select_compiles_schema_into_the_grid_folder(client, tmp_path, monkeypatch):
     dh_dir = tmp_path / "dh"
-    monkeypatch.setattr(_main, "_DH_DIR", dh_dir)
+    monkeypatch.setattr(views_core, "DH_DIR", dh_dir)
 
     r = await client.post("/api/schemas/select", json={"role": "sample", "schema_id": "mimicc_sample"})
     assert r.status_code == 200
@@ -109,7 +109,7 @@ async def test_select_compiles_schema_into_the_grid_folder(client, tmp_path, mon
 
 async def test_select_with_inline_yaml(client, tmp_path, monkeypatch):
     dh_dir = tmp_path / "dh"
-    monkeypatch.setattr(_main, "_DH_DIR", dh_dir)
+    monkeypatch.setattr(views_core, "DH_DIR", dh_dir)
     yaml_text = "name: inline_schema\nid: https://example.org/inline_schema\nclasses: {}\n"
 
     r = await client.post("/api/schemas/select", json={"role": "experiment", "yaml": yaml_text})

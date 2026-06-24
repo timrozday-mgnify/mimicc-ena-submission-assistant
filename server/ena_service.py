@@ -1,6 +1,6 @@
 """Service layer over ena-api-client and ena-submission-toolkit.
 
-Wraps the existing reusable functions so the FastAPI endpoints stay thin:
+Wraps the existing reusable functions so the views stay thin:
 
   * studies / samples   -> ``submit_study.submit_batch`` / ``submit_sample.submit_batch``
   * DH export -> records -> ``linkml_lib.dh_data.filter_columns`` + ``prepare_dh_output.prepare``

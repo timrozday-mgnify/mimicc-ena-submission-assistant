@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import conftest
-import main as _main
+import ena_service
 
 # ---------------------------------------------------------------------------
 # Health + credentials
@@ -27,7 +27,7 @@ async def test_set_and_clear_credentials(client, monkeypatch):
         seen["password"] = creds.password
         seen["test"] = test
 
-    monkeypatch.setattr(_main.ena_service, "validate_credentials", validate)
+    monkeypatch.setattr(ena_service, "validate_credentials", validate)
     r = await client.post("/api/credentials", json={"username": "Webin-9", "password": "pw"})
     assert r.status_code == 200
     assert r.json()["environment"] == "test"
@@ -43,7 +43,7 @@ async def test_set_credentials_rejects_invalid_webin_login(client, monkeypatch):
     def reject(*a, **k):
         raise PermissionError("bad login")
 
-    monkeypatch.setattr(_main.ena_service, "validate_credentials", reject)
+    monkeypatch.setattr(ena_service, "validate_credentials", reject)
     r = await client.post("/api/credentials", json={"username": "Webin-9", "password": "wrong", "test": False})
     assert r.status_code == 401
     assert "production" in r.json()["detail"]
@@ -77,7 +77,7 @@ async def test_study_submit_requires_credentials(client):
 
 async def test_records_list(client, with_creds, monkeypatch):
     rows = [{"accession": "ERP1", "alias": "a", "title": "t", "status": "PRIVATE"}]
-    monkeypatch.setattr(_main.ena_service, "list_records", lambda *a, **k: rows)
+    monkeypatch.setattr(ena_service, "list_records", lambda *a, **k: rows)
     r = await client.get("/api/records/studies?test=true&status=all")
     assert r.status_code == 200
     assert r.json() == rows
@@ -85,7 +85,7 @@ async def test_records_list(client, with_creds, monkeypatch):
 
 async def test_records_list_runs(client, with_creds, monkeypatch):
     rows = [{"accession": "ERR1", "alias": "r1", "experiment_accession": "ERX1", "status": "PRIVATE"}]
-    monkeypatch.setattr(_main.ena_service, "list_records", lambda *a, **k: rows)
+    monkeypatch.setattr(ena_service, "list_records", lambda *a, **k: rows)
     r = await client.get("/api/records/runs?test=true&status=all")
     assert r.status_code == 200
     assert r.json() == rows
@@ -102,7 +102,7 @@ async def test_records_list_experiments(client, with_creds, monkeypatch):
             "status": "PRIVATE",
         },
     ]
-    monkeypatch.setattr(_main.ena_service, "list_records", lambda *a, **k: rows)
+    monkeypatch.setattr(ena_service, "list_records", lambda *a, **k: rows)
     r = await client.get("/api/records/experiments?test=true&status=all")
     assert r.status_code == 200
     assert r.json() == rows
@@ -112,14 +112,14 @@ async def test_records_unknown_entity(client, with_creds, monkeypatch):
     def boom(*a, **k):
         raise ValueError("Unknown entity 'frogs'")
 
-    monkeypatch.setattr(_main.ena_service, "list_records", boom)
+    monkeypatch.setattr(ena_service, "list_records", boom)
     r = await client.get("/api/records/frogs")
     assert r.status_code == 400
 
 
 async def test_records_action(client, with_creds, monkeypatch):
     monkeypatch.setattr(
-        _main.ena_service,
+        ena_service,
         "run_action",
         lambda *a, **k: {"accession": "ERS1", "action": "release", "success": True, "messages": ""},
     )
@@ -135,7 +135,7 @@ async def test_records_action(client, with_creds, monkeypatch):
 
 async def test_sample_prepare(client, monkeypatch):
     container = {"Container": {"MIMICC_SampleExperiments": [{"alias": "s1"}]}}
-    monkeypatch.setattr(_main.ena_service, "prepare_samples", lambda export, where=None: container)
+    monkeypatch.setattr(ena_service, "prepare_samples", lambda export, where=None: container)
     r = await client.post("/api/sample/prepare", json={"export": {"any": "thing"}})
     assert r.status_code == 200
     body = r.json()
@@ -145,7 +145,7 @@ async def test_sample_prepare(client, monkeypatch):
 
 async def test_study_submit(client, with_creds, monkeypatch):
     monkeypatch.setattr(
-        _main.ena_service, "submit_studies", lambda *a, **k: {"success": True, "accessions": [{"accession": "ERP9"}]}
+        ena_service, "submit_studies", lambda *a, **k: {"success": True, "accessions": [{"accession": "ERP9"}]}
     )
     r = await client.post("/api/study/submit", json={"records": [{"alias": "x", "STUDY_TITLE": "t"}], "test": True})
     assert r.status_code == 200
@@ -154,7 +154,7 @@ async def test_study_submit(client, with_creds, monkeypatch):
 
 async def test_sample_submit_includes_logs(client, with_creds, monkeypatch):
     monkeypatch.setattr(
-        _main.ena_service,
+        ena_service,
         "submit_samples",
         lambda *a, **k: {
             "success": False,

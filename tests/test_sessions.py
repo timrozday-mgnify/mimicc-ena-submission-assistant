@@ -7,7 +7,7 @@ fixture in conftest (it wipes per-user rows from the throwaway test DB).
 from __future__ import annotations
 
 import conftest
-import main as _main
+import ena_service
 import session_store
 
 # ---------------------------------------------------------------------------
@@ -118,7 +118,7 @@ _RUN = {
 
 async def test_reads_plan_uses_stable_alias_and_result_records_ledger(client, with_creds, monkeypatch):
     # No existing runs in ENA.
-    monkeypatch.setattr(_main.ena_service, "lookup_existing_runs", lambda *a, **k: {})
+    monkeypatch.setattr(ena_service, "lookup_existing_runs", lambda *a, **k: {})
 
     sid = (await client.post("/api/sessions", json={"name": "ResumeRun"})).json()["id"]
     plan = (await client.post("/api/reads/plan", json={"runs": [_RUN], "session_id": sid})).json()["plan"]
@@ -151,7 +151,7 @@ async def test_reads_plan_uses_stable_alias_and_result_records_ledger(client, wi
 
 async def test_reads_plan_skips_already_in_ena(client, with_creds, monkeypatch):
     monkeypatch.setattr(
-        _main.ena_service,
+        ena_service,
         "lookup_existing_runs",
         lambda *a, **k: {"ResumeRun_MIMICC_A_1": {"experiment_accession": "ERX5", "run_accession": "ERR5"}},
     )
@@ -177,7 +177,7 @@ async def test_reads_plan_resumes_from_ledger(client, with_creds, monkeypatch):
     session_store.upsert_reads_run(
         sid, "MIMICC_A_1", "ResumeRun_MIMICC_A_1", session_store.STATUS_DONE, run_accession="ERR9"
     )
-    monkeypatch.setattr(_main.ena_service, "lookup_existing_runs", _boom)
+    monkeypatch.setattr(ena_service, "lookup_existing_runs", _boom)
 
     plan = (await client.post("/api/reads/plan", json={"runs": [_RUN], "session_id": sid})).json()["plan"]
     assert plan[0]["action"] == "skip"
@@ -187,7 +187,7 @@ async def test_reads_plan_resumes_from_ledger(client, with_creds, monkeypatch):
 async def test_reads_plan_force_reupload_uses_fresh_alias(client, with_creds, monkeypatch):
     # Even though it's "already in ENA", force_reupload must bypass the skip.
     monkeypatch.setattr(
-        _main.ena_service,
+        ena_service,
         "lookup_existing_runs",
         lambda *a, **k: {"ResumeRun_MIMICC_A_1": {"experiment_accession": "ERX5", "run_accession": "ERR5"}},
     )

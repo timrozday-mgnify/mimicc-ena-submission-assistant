@@ -36,14 +36,15 @@ New glue added here:
   lifecycle actions (release/hold/suppress/cancel).
 
 Everything runs against ENA **test** by default; a header toggle switches to
-**production** (with a confirm). Webin credentials live in server memory only
-(per user) and are never persisted.
+**production** (with a confirm). Webin credentials are held per-user in a
+cache only and are never written to the database.
 
 ## Architecture
 
 ```
-Browser ── login cookie ──► FastAPI server (server/main.py)
+Browser ── login cookie ──► Django server (server/config/, views_*.py)
    │                          ├── auth.py + orm/ ── Django ORM (accounts, sessions, reads ledger) → Postgres
+   │                          ├── credentials_store.py ── per-user Webin creds, cache-backed (never DB)
    │                          ├── ena_service.py ── ena-api-client submit_study/submit_sample (REST/XML, server-side)
    │                          └── read_assign.py ── suggest + manifest text build
    │  fetch manifest + plan ◄─┘
@@ -53,23 +54,21 @@ Local read-helper (127.0.0.1:9100, https://github.com/timrozday-mgnify/read-help
    │  SSE log stream ─► Browser ─► POST /api/reads/result (server updates the resume ledger)
 ```
 
-- **Database**: Django's ORM (used as a standalone library — FastAPI stays the
-  HTTP layer) over **PostgreSQL**. Accounts use Django's `auth.User`; sessions,
-  their full UI state, and the reads resume ledger are owned per user. (When no
-  `DATABASE_URL` is set the ORM falls back to SQLite — used for tests and
-  lightweight local runs.)
+- **Database**: Django's ORM over **PostgreSQL**, with Django serving the HTTP
+  layer too (views in `server/views_*.py`, routed by `server/config/urls.py`).
+  Accounts use Django's `auth.User`; sessions, their full UI state, and the
+  reads resume ledger are owned per user. (When no `DATABASE_URL` is set the
+  ORM falls back to SQLite — used for tests and lightweight local runs.)
 - **Accounts**: a basic username/password system, separate from ENA Webin
   credentials, with an `admin` superuser (from `ADMIN_USERNAME`/`ADMIN_PASSWORD`)
-  who can manage other accounts (Admin tab). Web logins are DB-backed cookies.
+  who can manage other accounts (Admin tab). Web logins are DB-backed cookies;
+  CSRF uses Django's standard cookie/token middleware (skipped entirely in
+  local mode — there's no login screen to attack in single-user mode).
 - **Reads**: the server builds the webin-cli manifest and the upload *plan*
   (what to upload vs. skip, via the ledger + ENA Reports API), but the upload
   itself runs on the user's machine in the [read-helper](https://github.com/timrozday-mgnify/read-helper)
   (built from a pinned tag, see "Pinned dependency versions" below) — reads
   never pass through the server.
-- **DH bundle rebuild** (`POST /api/dh/build`) still spawns the
-  `dh-builder` sibling container, but is now **admin-only** and needs the
-  Docker socket mounted on the server (off by default — the bundle is baked at
-  image-build time).
 
 ## Install & run
 
@@ -149,29 +148,13 @@ actual build steps (`dh_build_steps.sh`) from the standalone
 single canonical copy, not vendored here — pinned to a tag (`DH_BUILDER_REF` in
 the `Dockerfile`), so they can't drift apart.
 
-#### On-demand rebuild
-
-The bundle directory (`server/static/dh/`) and its source schema (`/dh-schema`
-in the container) are bind-mounted from host directories
-(`MIMICC_DH_BUNDLE_DIR` / `MIMICC_DH_SCHEMA_DIR` in `.env`, defaulting under
-`~/.mimicc-ena/`), seeded from the image's build-time bundle/schema on first
-run. This means a rebuild can be triggered at runtime — via
-`POST /api/dh/build` (optionally with a `schema_yaml` body to overwrite the
-schema first) then streaming `GET /api/dh/build/stream/{job_id}` — without
-restarting the server or rebuilding the image; the result is immediately
-served at `/dh`. This spawns the `dh-builder` sibling container, built
-from the standalone [`dh-builder`](https://github.com/timrozday-mgnify/dh-builder)
-repo at its pinned tag (build it once with:
-
-```bash
-docker build \
-  --build-context dataharmonizer-src=https://github.com/timrozday-mgnify/DataHarmonizer.git#v2.1.0-mimicc \
-  -t dh-builder https://github.com/timrozday-mgnify/dh-builder.git#v0.1.0
-```
-
-— substitute the tags above with whatever's currently pinned in this repo's
-`Dockerfile`/`docker-compose.yml`), mirroring how reads submission spawns
-`enasequence/webin-cli` via the [`read-helper`](https://github.com/timrozday-mgnify/read-helper) repo.
+The bundle directory (`server/static/dh/`) is bind-mounted from a host
+directory (`MIMICC_DH_BUNDLE_DIR` in `.env`, defaulting under
+`~/.mimicc-ena/`), seeded from the image's build-time bundle on first run, so
+it stays writable in place across container restarts without needing a
+volume rebuild. There is no runtime/on-demand rebuild endpoint — updating the
+bundle (e.g. after a schema or DataHarmonizer version change) means rerunning
+`docker compose build`.
 
 ### Schema library (Schema tab)
 
@@ -205,10 +188,10 @@ templates:
   `server/static/dh/templates/`) plus `dh-template-registry.json`. Because
   DataHarmonizer fetches `schema.json` over HTTP at runtime
   (`lib/utils/templates.js: fetchSchema`), this takes effect on the next
-  iframe reload — **no DataHarmonizer bundle rebuild needed**. (This is
-  different from the on-demand rebuild above, which recompiles the whole
-  Node/Yarn bundle; schema selection only swaps the served JSON for an
-  already-registered template folder.)
+  iframe reload — **no DataHarmonizer bundle rebuild needed**. (Schema
+  selection only swaps the served JSON for an already-registered template
+  folder; it doesn't recompile the Node/Yarn bundle, which is built once at
+  image-build time — see "DataHarmonizer bundle build" above.)
 - **Experiment schema caveat**: selecting an experiment schema that doesn't use
   the column-title contract below (`Experiment name` / `Sample alias`) breaks
   read-pairing sync — the Reads tab shows a non-blocking warning when this is
@@ -306,9 +289,8 @@ in practice both files now exist permanently.
   row (by NAME) to build the webin-cli manifest; a row with no experiment-grid match, or an
   experiment grid that isn't built/ready, blocks submission with a clear error rather than sending
   an incomplete manifest.
-- The on-demand rebuild path (`POST /api/dh/build`) is **not** extended to the experiment template —
-  it stays scoped to the sample template; rebuilding the experiment template requires a full
-  `docker compose build`.
+- There is no runtime rebuild path for either template — both require a full `docker compose build`
+  to pick up schema changes (see "DataHarmonizer bundle build" above).
 
 ### Read-sample pairing TSV
 
@@ -364,18 +346,19 @@ button). Everything about a session is saved to disk and restored when you reope
 
 ```bash
 python -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt          # full stack incl. Django, linkml, and the
-                                          # pinned ena_api/linkml_lib/dh_builder_lib/
+pip install .                            # full stack: Django (ORM + HTTP), gunicorn,
+                                          # linkml, and the pinned ena_api/linkml_lib/
                                           # ena-submission-toolkit git dependencies
 pip install pytest pytest-asyncio anyio playwright
 
 # Apply migrations. With no DATABASE_URL the ORM uses a local SQLite file
 # (.data/app.db); set DATABASE_URL=postgresql://… to use Postgres instead.
 python manage.py migrate
+python manage.py bootstrap_admin         # creates/updates the admin account from env
 
 # Run the server locally (reads submission needs the local read-helper running;
 # other tabs work without it). DEPLOYMENT_MODE defaults to local (auto-login).
-PYTHONPATH=server:. uvicorn main:app --reload --port 9000 --app-dir server
+PYTHONPATH=server:. python manage.py runserver 0.0.0.0:9000
 ```
 
 The schemas/XSDs (`schemas/`, `assets/ena_schema/`) are committed directly in
@@ -385,8 +368,8 @@ resolves them by default, with `ENA_DH_SCHEMA`/`ENA_DH_XSD`/
 
 ### Tests
 
-`pytest` (in-process ASGI API tests + read-assignment unit tests) and Playwright
-(UI), mirroring `read-helper`'s patterns. No Docker or network
+`pytest` (in-process Django test-client API tests + read-assignment unit tests)
+and Playwright (UI), mirroring `read-helper`'s patterns. No Docker or network
 needed — the webin-cli runner and `ena_service` calls are mocked.
 
 ```bash
@@ -396,54 +379,81 @@ python -m pytest -q                        # all tests
 python -m pytest tests/test_server.py -q   # API only
 ```
 
+### Docker Compose tests
+
+`tests/test_compose_ui.py` runs Playwright against the real `docker compose`
+stack instead of the in-process fixture above — real Postgres-backed
+sessions, the real DataHarmonizer bundle, and the real `dhtb` sidecar
+container, reached over the network instead of mocked. It's the one place
+that exercises what `docker-compose.yml` actually assembles, at the cost of
+an image build; it can't cover the ENA-data-dependent tests in
+`tests/test_ui.py` (nothing to mock in a separate container), so it's a
+narrower, slower complement to the suite above, not a replacement.
+
+Opt-in (needs Docker, takes minutes for the image build) — skipped unless
+`COMPOSE_TEST=1`:
+
+```bash
+COMPOSE_TEST=1 python -m pytest tests/test_compose_ui.py -q
+```
+
 ## Layout
 
 ```
 server/
-  main.py              FastAPI app: endpoints (auth/admin/sessions/reads plan+result), jobs, SSE
-  auth.py              accounts, login sessions, admin bootstrap, FastAPI auth dependencies
-  orm/                 Django app: settings.py, models.py (User/LoginSession/SubmissionSession/ReadsRun), migrations/
-  dbsetup.py           one-time django.setup() bootstrap for using the ORM standalone
-  ena_service.py       studies/samples/records/actions (wraps reused libraries, server-side REST)
-  read_assign.py       scan / suggest / manifest (text) build for reads
-  session_store.py     submission sessions + reads ledger, Django-ORM-backed, owner-scoped
-  dh_builder_runner.py Docker-in-Docker adapter for the (admin-only) DH bundle rebuild
-  schema_service.py    schema library: list/save/delete, ENA XML/XSD import/merge, grid selection
-  _bootstrap.py        locates the committed schema/XSD assets (schemas/, assets/ena_schema/;
-                        sys.path is no longer needed for ena_api/linkml_lib/dh_builder_lib/
-                        ena-submission-toolkit — they're pinned pip dependencies, see requirements.txt)
+  config/              Django project: settings.py, urls.py, wsgi.py (gunicorn entrypoint)
+  views_core.py         health/index, static + DH bundle/templates serving
+  views_auth.py         login/logout/me, admin user management
+  views_credentials.py  Webin credentials set/clear (POST/DELETE /api/credentials)
+  views_sessions.py     submission session CRUD + state + DH export
+  views_records.py      studies/samples/records/actions + reads plan/result
+  views_schemas.py      schema library CRUD + ENA XML/XSD import/merge + grid selection
+  middleware.py         skips Django's CSRF checks in local (single-user) mode
+  auth.py               accounts, login sessions, admin bootstrap; (user, error_response) view helpers
+  credentials_store.py  per-user Webin credentials, cache-backed (Redis in hosted mode, never DB)
+  orm/                  Django app: models.py (User/LoginSession/SubmissionSession/ReadsRun), migrations/,
+                        management/commands/bootstrap_admin.py
+  dbsetup.py            one-time django.setup() bootstrap
+  ena_service.py        studies/samples/records/actions (wraps reused libraries, server-side REST)
+  read_assign.py        scan / suggest / manifest (text) build for reads
+  session_store.py      submission sessions + reads ledger, Django-ORM-backed, owner-scoped
+  schema_service.py     schema library: list/save/delete, ENA XML/XSD import/merge, grid selection
+  _bootstrap.py         locates the committed schema/XSD assets (schemas/, assets/ena_schema/;
+                        sys.path is no longer needed for ena_api/linkml_lib/
+                        ena-submission-toolkit — they're pinned pip dependencies, see pyproject.toml)
   static/              single-page UI (index.html, app.js) + DH bundle (dh/, volume-mounted)
-manage.py          Django management entrypoint (migrations)
+manage.py          Django management entrypoint (migrate, bootstrap_admin)
 schemas/           committed MIMICC LinkML schemas (mimicc_sample.yaml, mimicc_experiment.yaml)
 assets/ena_schema/ committed ENA/SRA XSDs + checklist XMLs (checklists/ filled by fetch_ena_checklists.sh)
 scripts/
   fetch_ena_checklists.sh fetch the full set of public ENA sample-checklist XMLs
   build_dh_template.sh   build the embedded DataHarmonizer bundle (local dev)
-  server_entrypoint.sh   seeds the bind-mounted DH bundle/schema dirs on first run
+  server_entrypoint.sh   seeds the bind-mounted DH bundle dir on first run, migrates, bootstraps admin
 tests/             pytest + Playwright
 Dockerfile             builds the main server image (includes a dh-builder stage and
                        pinned git-clone stages for DataHarmonizer/dh-builder)
 docker-compose.yml
 ```
 
-`dh_builder_lib` (the Docker executor `dh_builder_runner.py` wraps, now a pinned pip
-dependency), the Dockerfile for the `dh-builder` image (shared with
+The Dockerfile for the `dh-builder` image (shared with
 [dataharmonizer-template-builder](https://github.com/timrozday-mgnify/dataharmonizer-template-builder),
 which runs the same image with a different `TEMPLATE`), and `dh_build_steps.sh`
-(the shared DH build steps, also pulled in by the Dockerfile's embedded
-`dh-builder` stage and `scripts/build_dh_template.sh` above) all live in the
+(the shared DH build steps, pulled in by the Dockerfile's embedded
+`dh-builder` stage and `scripts/build_dh_template.sh` above) live in the
 standalone [`dh-builder`](https://github.com/timrozday-mgnify/dh-builder) repo,
-pulled at a pinned tag the same way [`read-helper`](https://github.com/timrozday-mgnify/read-helper)
-is for reads upload.
+pulled at a pinned tag — used only at image-build time now (there's no
+runtime/on-demand rebuild path), the same way [`read-helper`](https://github.com/timrozday-mgnify/read-helper)
+is pulled for reads upload.
 
 ### Pinned dependency versions
 
 All sibling-repo code is pulled at a fixed git tag, never a local checkout or
 `main`/`master`. The pins live in two places:
 
-- **`requirements.txt`** — `ena-api-client`, `linkml-lib`, `dh-builder-lib`, and
+- **`pyproject.toml`** — `ena-api-client`, `linkml-lib`, and
   `ena-submission-toolkit` as
-  `name @ git+https://github.com/timrozday-mgnify/<repo>.git@<tag>` lines.
+  `name @ git+https://github.com/timrozday-mgnify/<repo>.git@<tag>` entries
+  in `[project.dependencies]`.
 - **`Dockerfile`** — `DATAHARMONIZER_REF` / `DH_BUILDER_REF` build
   args, and **`docker-compose.yml`** — the `read-helper` and `dhtb` services'
   `build.context`/`additional_contexts` git URLs (`...git#<tag>`, or
@@ -459,9 +469,11 @@ the repo root finds them all).
 
 ## Notes
 
-- **Webin credentials** are never written to disk or logged; held in server
-  memory per user and re-entered after a restart. They are also forwarded to the
-  local read-helper (in its memory only) so it can upload.
+- **Webin credentials** are never written to the database or logged. They're
+  held per-user in a cache (`server/credentials_store.py`) — in-process in local
+  mode, or Redis in hosted mode (with persistence disabled, so they're still
+  never written to disk) — and re-entered after a restart. They are also
+  forwarded to the local read-helper (in its memory only) so it can upload.
 - **App accounts** are separate from Webin credentials. The admin account is
   (re)created from `ADMIN_USERNAME`/`ADMIN_PASSWORD` on every boot, so those env
   vars are authoritative for the admin password — change them before hosting.

@@ -1,9 +1,9 @@
 """ORM schema for the multi-user hosted app.
 
 Accounts reuse Django's built-in ``auth.User`` (username/password hashing,
-``is_superuser`` for the admin role). Everything else is owned per-user:
+``is_superuser`` for the admin role); web logins use
+``django.contrib.sessions``. Everything else is owned per-user:
 
-  * ``LoginSession`` — DB-backed web login tokens (cookie holds the token).
   * ``SubmissionSession`` — one named ENA submission; folds the former
     ``state.json`` / ``dh_export*.json`` / ``reads.log`` files into columns.
   * ``ReadsRun`` — the per-run reads submission ledger (resumability).
@@ -11,16 +11,10 @@ Accounts reuse Django's built-in ``auth.User`` (username/password hashing,
 
 from __future__ import annotations
 
-import secrets
 import uuid
-from datetime import timedelta
 
 from django.contrib.auth.models import User
 from django.db import models
-from django.utils import timezone
-
-# How long a web login stays valid without activity refresh.
-LOGIN_SESSION_TTL = timedelta(days=7)
 
 # ReadsRun.status values (mirrors the former session_store constants).
 STATUS_PENDING = "pending"
@@ -29,31 +23,8 @@ STATUS_ALREADY_IN_ENA = "already_in_ena"
 STATUS_FAILED = "failed"
 
 
-def _new_token() -> str:
-    return secrets.token_hex(32)
-
-
 def _new_session_id() -> str:
     return uuid.uuid4().hex[:12]
-
-
-class LoginSession(models.Model):
-    """A web login bound to a User, addressed by an opaque cookie token."""
-
-    token = models.CharField(max_length=64, primary_key=True, default=_new_token, editable=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="login_sessions")
-    created_at = models.DateTimeField(auto_now_add=True)
-    last_seen = models.DateTimeField(auto_now=True)
-    expires_at = models.DateTimeField()
-
-    def save(self, *args, **kwargs):
-        if not self.expires_at:
-            self.expires_at = timezone.now() + LOGIN_SESSION_TTL
-        super().save(*args, **kwargs)
-
-    @property
-    def is_expired(self) -> bool:
-        return timezone.now() >= self.expires_at
 
 
 class SubmissionSession(models.Model):

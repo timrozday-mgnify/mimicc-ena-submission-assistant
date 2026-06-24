@@ -3,8 +3,8 @@
 Accounts are completely separate from ENA Webin credentials. Django's built-in
 ``auth.User`` provides password hashing and the ``is_superuser`` admin flag; an
 ``admin`` superuser is bootstrapped from ``ADMIN_USERNAME`` / ``ADMIN_PASSWORD``
-env vars. Web logins are DB-backed (``LoginSession``), addressed by an opaque
-cookie token.
+env vars. Web logins use Django's built-in session framework
+(``django.contrib.sessions``).
 
 Deployment mode (``DEPLOYMENT_MODE``):
   * ``local`` (default) — single user; every request auto-authenticates as the
@@ -21,13 +21,9 @@ import dbsetup
 
 dbsetup.ensure()
 
+from django.contrib.auth import authenticate as _dj_authenticate  # noqa: E402
 from django.contrib.auth.models import User  # noqa: E402
-from django.utils import timezone  # noqa: E402
-from fastapi import HTTPException, Request, Response  # noqa: E402
-from orm import models  # noqa: E402
-
-COOKIE_NAME = "mimicc_sid"
-
+from django.http import HttpRequest, JsonResponse  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Deployment mode
@@ -89,72 +85,35 @@ def get_admin_user() -> User:
 
 
 def authenticate(username: str, password: str) -> User | None:
-    user = User.objects.filter(username=(username or "").strip()).first()
-    if user and user.is_active and user.check_password(password):
-        return user
-    return None
-
-
-def create_login(user: User) -> str:
-    session = models.LoginSession(user=user, expires_at=timezone.now() + models.LOGIN_SESSION_TTL)
-    session.save()
-    return session.token
-
-
-def resolve_user(token: str | None) -> User | None:
-    if not token:
-        return None
-    session = models.LoginSession.objects.filter(pk=token).select_related("user").first()
-    if session is None:
-        return None
-    if session.is_expired:
-        session.delete()
-        return None
-    session.save(update_fields=["last_seen"])  # refresh activity (auto_now)
-    return session.user
-
-
-def destroy_login(token: str | None) -> None:
-    if token:
-        models.LoginSession.objects.filter(pk=token).delete()
-
-
-def set_login_cookie(response: Response, token: str) -> None:
-    response.set_cookie(
-        COOKIE_NAME,
-        token,
-        httponly=True,
-        samesite="lax",
-        secure=not is_local(),
-        max_age=int(models.LOGIN_SESSION_TTL.total_seconds()),
-        path="/",
-    )
-
-
-def clear_login_cookie(response: Response) -> None:
-    response.delete_cookie(COOKIE_NAME, path="/")
+    return _dj_authenticate(username=(username or "").strip(), password=password)
 
 
 # ---------------------------------------------------------------------------
-# FastAPI dependencies
+# Django view-layer auth helpers
+#
+# Django has no dependency-injection system to catch a raised exception and
+# turn it into a response, so these return ``(user, error_response)`` tuples.
+# Callers do: ``user, err = auth.current_user(request); if err: return err``.
 # ---------------------------------------------------------------------------
 
 
-def current_user(request: Request) -> User:
-    """Resolve the request's user, or 401. In local mode, auto-login as admin."""
+def current_user(request: HttpRequest) -> tuple[User | None, JsonResponse | None]:
+    """Resolve the request's user, or an error response. In local mode, auto-login as admin."""
     if is_local():
-        return get_admin_user()
-    user = resolve_user(request.cookies.get(COOKIE_NAME))
+        return get_admin_user(), None
+    user = request.user if request.user.is_authenticated else None
     if user is None:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return user
+        return None, JsonResponse({"detail": "Not authenticated"}, status=401)
+    return user, None
 
 
-def require_admin(request: Request) -> User:
-    user = current_user(request)
+def require_admin(request: HttpRequest) -> tuple[User | None, JsonResponse | None]:
+    user, err = current_user(request)
+    if err:
+        return None, err
     if not user.is_superuser:
-        raise HTTPException(status_code=403, detail="Admin privileges required")
-    return user
+        return None, JsonResponse({"detail": "Admin privileges required"}, status=403)
+    return user, None
 
 
 # ---------------------------------------------------------------------------

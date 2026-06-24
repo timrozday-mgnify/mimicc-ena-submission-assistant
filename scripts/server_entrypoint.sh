@@ -1,20 +1,14 @@
 #!/usr/bin/env bash
-# Seeds the host-mounted DH bundle/schema dirs from the image-baked defaults
-# on first run (both directories are bind-mounted from the host and start
-# out empty), then execs the real CMD. This lets the bundle built at image
-# time (Dockerfile's dh-builder stage) work out of the box, while leaving
-# the same host directory writable by an on-demand rebuild (dh_builder_lib)
-# without needing a container restart for the change to take effect.
+# Seeds the host-mounted DH bundle dir from the image-baked default on first
+# run (it's bind-mounted from the host and starts out empty), then execs the
+# real CMD. This lets the bundle built at image time (Dockerfile's dh-builder
+# stage) work out of the box while staying writable in place for later image
+# rebuilds.
 set -euo pipefail
 
 if [ -d /app/dh-default ] && [ -z "$(ls -A /app/server/static/dh 2>/dev/null)" ]; then
   mkdir -p /app/server/static/dh
   cp -R /app/dh-default/. /app/server/static/dh/
-fi
-
-if [ -f /app/dh-schema-default/mimicc.yaml ] && [ -z "$(ls -A /dh-schema 2>/dev/null)" ]; then
-  mkdir -p /dh-schema
-  cp /app/dh-schema-default/mimicc.yaml /dh-schema/mimicc.yaml
 fi
 
 # Apply database migrations before serving. When DATABASE_URL points at Postgres,
@@ -40,5 +34,7 @@ except Exception:
 fi
 echo "Applying database migrations…"
 python /app/manage.py migrate --noinput
+echo "Bootstrapping admin account…"
+python /app/manage.py bootstrap_admin
 
 exec "$@"
