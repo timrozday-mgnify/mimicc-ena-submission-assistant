@@ -1,6 +1,6 @@
 """Playwright UI tests.
 
-Driven against a real uvicorn server (``live_server_url`` fixture) with the
+Driven against a real WSGI server (``live_server_url`` fixture) with the
 webin-cli runner patched, so no Docker is required. Skipped automatically if
 Playwright (and its browsers) are not installed.
 """

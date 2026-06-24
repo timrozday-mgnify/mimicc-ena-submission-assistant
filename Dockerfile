@@ -1,5 +1,5 @@
 # Pinned refs for sibling repos this image pulls at build time. Bump these
-# (and the matching git+https pins in requirements.txt) when a sibling repo
+# (and the matching git+https pins in pyproject.toml) when a sibling repo
 # cuts a new tag — see README "Pinned dependency versions".
 ARG DATAHARMONIZER_REF=v2.1.0-mimicc
 ARG DH_BUILDER_REF=v0.1.0
@@ -51,10 +51,10 @@ RUN apt-get update && apt-get install -y docker.io curl && rm -rf /var/lib/apt/l
 WORKDIR /app
 
 # ena_api, linkml_lib, dh_builder_lib and ena_submission_toolkit are pinned
-# pip dependencies (see requirements.txt) — no local build context or
+# pip dependencies (see pyproject.toml) — no local build context or
 # vendor.sh copy needed for them anymore.
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml .
+RUN pip install --no-cache-dir .
 
 # Schemas + ENA XSDs used for sample/study build + validation. These aren't
 # Python packages — they're committed directly in this repo (schemas/,
@@ -65,13 +65,10 @@ COPY assets/ena_schema/ assets/ena_schema/
 COPY server/ server/
 # Django ORM management entrypoint (migrations).
 COPY manage.py manage.py
-# Built DataHarmonizer bundle (see dh-builder stage above) and the schema it
-# was built from, staged separately from server/static/dh/ and /dh-schema —
-# those are host bind mounts (see docker-compose.yml) seeded from these
-# defaults on first run by scripts/server_entrypoint.sh, so an on-demand
-# rebuild (dh_builder_lib) can update them without an image rebuild.
+# Built DataHarmonizer bundle (see dh-builder stage above), staged separately
+# from server/static/dh/ — that's a host bind mount (see docker-compose.yml)
+# seeded from this default on first run by scripts/server_entrypoint.sh.
 COPY --from=dh-builder /dh-src/web/dist/. dh-default/
-COPY schemas/mimicc_sample.yaml dh-schema-default/mimicc.yaml
 COPY scripts/server_entrypoint.sh /usr/local/bin/server_entrypoint.sh
 RUN chmod +x /usr/local/bin/server_entrypoint.sh
 
@@ -79,4 +76,4 @@ ENV PYTHONPATH=/app/server:/app
 
 WORKDIR /app/server
 ENTRYPOINT ["/usr/local/bin/server_entrypoint.sh"]
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9000"]
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:9000", "--workers", "2"]

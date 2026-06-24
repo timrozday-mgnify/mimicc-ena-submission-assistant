@@ -16,32 +16,6 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name="LoginSession",
-            fields=[
-                (
-                    "token",
-                    models.CharField(
-                        default=orm.models._new_token,
-                        editable=False,
-                        max_length=64,
-                        primary_key=True,
-                        serialize=False,
-                    ),
-                ),
-                ("created_at", models.DateTimeField(auto_now_add=True)),
-                ("last_seen", models.DateTimeField(auto_now=True)),
-                ("expires_at", models.DateTimeField()),
-                (
-                    "user",
-                    models.ForeignKey(
-                        on_delete=django.db.models.deletion.CASCADE,
-                        related_name="login_sessions",
-                        to=settings.AUTH_USER_MODEL,
-                    ),
-                ),
-            ],
-        ),
-        migrations.CreateModel(
             name="SubmissionSession",
             fields=[
                 (

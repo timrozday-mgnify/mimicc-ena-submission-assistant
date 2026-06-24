@@ -1,23 +1,28 @@
 """Shared pytest fixtures.
 
-API tests drive the FastAPI app in-process via httpx ASGITransport (no Docker,
-no network). UI tests drive a real uvicorn server with Playwright. Reads upload
-now happens via a local helper, so it is exercised at the plan/result API level
-rather than by running webin-cli.
+API tests drive Django views in-process via a thin async-compatible wrapper
+around ``django.test.Client`` (no Docker, no network, no real event loop —
+Django's test client dispatches synchronously, the ``async def``/``await``
+shape in test files is kept only so the bulk of test bodies didn't need
+rewriting). UI tests drive a real WSGI server with Playwright. Reads upload
+now happens via a local helper, so it is exercised at the plan/result API
+level rather than by running webin-cli.
 
-The Django ORM is pointed at a throwaway SQLite database (configured before any
-app module is imported); ``DEPLOYMENT_MODE=local`` makes every request
+The Django ORM is pointed at a throwaway SQLite database (configured before
+any app module is imported); ``DEPLOYMENT_MODE=local`` makes every request
 auto-authenticate as the admin user, matching the single-user local experience.
 """
 
 from __future__ import annotations
 
+import json as _json
 import os
 import sys
 import tempfile
 import threading
 import time
 from pathlib import Path
+from wsgiref.simple_server import WSGIServer, make_server
 
 import httpx
 import pytest
@@ -31,8 +36,9 @@ _DB_FD, _DB_PATH = tempfile.mkstemp(suffix=".sqlite3", prefix="mimicc-test-")
 os.close(_DB_FD)
 os.environ["SQLITE_PATH"] = _DB_PATH
 os.environ.setdefault("DEPLOYMENT_MODE", "local")
-# Tests call the sync ORM directly from async test bodies (low concurrency,
-# single throwaway SQLite DB); allow it. App code keeps ORM off the event loop.
+# Test bodies stay ``async def`` (see AsyncClient below) purely so they didn't
+# need rewriting, but Django's test client/ORM underneath run synchronously
+# inside that event loop; allow it (single throwaway SQLite DB, low concurrency).
 os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
 
 import dbsetup  # noqa: E402
@@ -43,33 +49,94 @@ import auth as _auth  # noqa: E402
 
 _auth.bootstrap_admin()
 
-import main as _main  # noqa: E402
+import credentials_store  # noqa: E402
+import ena_service  # noqa: E402
+from django.core.cache import cache as _cache  # noqa: E402
+from django.test import Client as _DjangoClient  # noqa: E402
+
+
+class AsyncClient:
+    """Async-shaped wrapper around ``django.test.Client``.
+
+    Lets test bodies keep ``await client.get(...)``-style calls (no real async
+    I/O happens — Django's test client runs the WSGI stack synchronously).
+    """
+
+    def __init__(self, *, headers: dict | None = None, secure: bool = False):
+        self._client = _DjangoClient()
+        self._headers = headers or {}
+        self._secure = secure
+
+    def _merged_headers(self, headers: dict | None) -> dict:
+        return {**self._headers, **(headers or {})}
+
+    @staticmethod
+    def _with_text(response):
+        # django.http.HttpResponse has no .text — add it (httpx-style) so
+        # callers don't need response.content.decode().
+        response.text = response.content.decode()
+        return response
+
+    async def get(self, path: str, **kwargs):
+        headers = kwargs.pop("headers", None)
+        return self._with_text(
+            self._client.get(path, secure=self._secure, headers=self._merged_headers(headers), **kwargs)
+        )
+
+    async def delete(self, path: str, **kwargs):
+        headers = kwargs.pop("headers", None)
+        return self._with_text(
+            self._client.delete(path, secure=self._secure, headers=self._merged_headers(headers), **kwargs)
+        )
+
+    async def post(self, path: str, *, json=None, data=None, files=None, **kwargs):
+        headers = kwargs.pop("headers", None)
+        return self._with_text(
+            self._client.post(
+                path,
+                **self._body_kwargs(json, data, files),
+                secure=self._secure,
+                headers=self._merged_headers(headers),
+            )
+        )
+
+    async def put(self, path: str, *, json=None, data=None, **kwargs):
+        headers = kwargs.pop("headers", None)
+        return self._with_text(
+            self._client.put(
+                path, **self._body_kwargs(json, data, None), secure=self._secure, headers=self._merged_headers(headers)
+            )
+        )
+
+    @staticmethod
+    def _body_kwargs(json, data, files) -> dict:
+        if json is not None:
+            return {"data": _json.dumps(json), "content_type": "application/json"}
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        merged = dict(data or {})
+        for key, (filename, content, content_type) in (files or {}).items():
+            merged[key] = SimpleUploadedFile(filename, content, content_type=content_type)
+        return {"data": merged or None}
 
 
 @pytest.fixture
-def app():
-    return _main.app
-
-
-@pytest.fixture
-async def client():
-    transport = httpx.ASGITransport(app=_main.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
+def client():
+    return AsyncClient()
 
 
 @pytest.fixture(autouse=True)
 def clean_state():
-    """Reset in-memory state and per-user DB rows around every test."""
+    """Reset cache + per-user DB rows around every test."""
     from django.contrib.auth.models import User
+    from django.contrib.sessions.models import Session
     from orm import models
 
     def _wipe():
-        _main._jobs.clear()
-        _main._user_credentials.clear()
+        _cache.clear()
         models.ReadsRun.objects.all().delete()
         models.SubmissionSession.objects.all().delete()
-        models.LoginSession.objects.all().delete()
+        Session.objects.all().delete()
         User.objects.exclude(username=_auth.admin_username()).delete()
 
     _wipe()
@@ -81,8 +148,8 @@ def clean_state():
 def with_creds():
     """Configure Webin credentials for the (auto-logged-in) admin user."""
     admin = _auth.get_admin_user()
-    _main._user_credentials[admin.id] = ("Webin-test", "secret")
-    return _main._user_credentials[admin.id]
+    credentials_store.set_creds(admin.id, "Webin-test", "secret")
+    return ("Webin-test", "secret")
 
 
 # ---------------------------------------------------------------------------
@@ -105,13 +172,13 @@ MOCK_READS_LOG = (
 
 @pytest.fixture(scope="session")
 def live_server_url():
-    import uvicorn
+    import config.wsgi as wsgi_module
 
     admin = _auth.get_admin_user()
-    _main._user_credentials[admin.id] = ("Webin-test", "secret")
+    credentials_store.set_creds(admin.id, "Webin-test", "secret")
 
-    original_list_records = _main.ena_service.list_records
-    original_validate_credentials = _main.ena_service.validate_credentials
+    original_list_records = ena_service.list_records
+    original_validate_credentials = ena_service.validate_credentials
 
     def list_records(creds, entity, **kwargs):
         if entity == "samples":
@@ -143,12 +210,11 @@ def live_server_url():
             ]
         return original_list_records(creds, entity, **kwargs)
 
-    _main.ena_service.list_records = list_records
-    _main.ena_service.validate_credentials = lambda *a, **k: None
+    ena_service.list_records = list_records
+    ena_service.validate_credentials = lambda *a, **k: None
 
-    config = uvicorn.Config(_main.app, host="127.0.0.1", port=9911, log_level="warning")
-    server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
+    server = make_server("127.0.0.1", 9911, wsgi_module.application, server_class=WSGIServer)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
     url = "http://127.0.0.1:9911"
@@ -163,7 +229,7 @@ def live_server_url():
         raise RuntimeError("live server did not start")
 
     yield url
-    server.should_exit = True
+    server.shutdown()
     thread.join(timeout=5)
-    _main.ena_service.list_records = original_list_records
-    _main.ena_service.validate_credentials = original_validate_credentials
+    ena_service.list_records = original_list_records
+    ena_service.validate_credentials = original_validate_credentials
