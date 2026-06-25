@@ -8,6 +8,23 @@ version: "3"
 # compose invocation here needs DOCKER_DEFAULT_PLATFORM unset. These tasks do
 # that for you instead of requiring `env -u DOCKER_DEFAULT_PLATFORM ...` by hand.
 tasks:
+  test:
+    desc: Run the pytest suite (API + read-assignment unit tests, no Docker)
+    cmds:
+      - .venv/bin/python -m pytest {{.CLI_ARGS}}
+
+  test:ui:
+    desc: Run the Playwright UI tests against the in-process Django test client
+    cmds:
+      - .venv/bin/python -m pytest tests/test_ui.py {{.CLI_ARGS}}
+
+  test:compose:
+    desc: >
+      Run Playwright against the real docker compose stack (builds the image;
+      takes minutes). See README "Docker Compose tests".
+    cmds:
+      - COMPOSE_TEST=1 .venv/bin/python -m pytest tests/test_compose_ui.py {{.CLI_ARGS}}
+
   up:
     desc: Start the stack, building images as needed
     cmds:
