@@ -63,6 +63,7 @@ def test_import_build_merges_checklist_and_xsd_sources():
 
     schema = _yaml.safe_load(yaml_text)
     assert schema.get("slots")
+    assert all("source" not in (slot.get("annotations") or {}) for slot in schema["slots"].values())
 
 
 def test_import_build_raises_without_any_inputs():

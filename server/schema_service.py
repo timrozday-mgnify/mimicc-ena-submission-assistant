@@ -150,7 +150,19 @@ def import_build(
         raise ValueError("No input sources given")
 
     schema = pipeline.build(paths, name=name, title=title, include=include, exclude=exclude)
+    _normalise_slot_source_annotations(schema)
     return linkml_io.dump_yaml(schema)
+
+
+def _normalise_slot_source_annotations(schema: dict) -> None:
+    """Move legacy generated slot source annotations to top-level provenance."""
+    for slot in (schema.get("slots") or {}).values():
+        annotations = slot.get("annotations")
+        if not isinstance(annotations, dict) or "source" not in annotations:
+            continue
+        slot.setdefault("source", annotations.pop("source"))
+        if not annotations:
+            slot.pop("annotations", None)
 
 
 def select_for_grid(role: str, yaml_text: str, *, dh_dir: Path) -> str:

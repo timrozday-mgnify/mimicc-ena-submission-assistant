@@ -228,7 +228,7 @@ Sample metadata and experiment metadata (platform, instrument, library source/se
 combined schema (`ena-submission-dataharmonizer/schemas/mimicc_sample_experiment.yaml`) via
 the standalone `linkml-lib` package's `linkml_lib.transform.filter`:
 
-- **`mimicc_sample.yaml`** (Samples tab) — every slot whose `annotations.source` is one of
+- **`mimicc_sample.yaml`** (Samples tab) — every slot whose source metadata is one of
   `ERC000025`, `MIMICC.custom`, `ENA.sample`, `ENA.project` (44 slots). Generated with:
   ```python
   from linkml_lib import io, schema, transform
