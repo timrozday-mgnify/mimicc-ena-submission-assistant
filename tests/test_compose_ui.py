@@ -117,6 +117,25 @@ def test_dh_bundle_iframe_loads(page):
     page.wait_for_function("() => document.getElementById('dhFrame').src.includes('/dh/')")
     frame = page.frame_locator("#dhFrame")
     frame.locator("body").wait_for(timeout=15_000)
+    frame.locator(".ht_master .htCore tbody td").first.wait_for(timeout=15_000)
+    first_cell = frame.locator(".ht_master .htCore tbody td").first
+    assert first_cell.evaluate("el => getComputedStyle(el).whiteSpace") == "nowrap"
+    assert first_cell.evaluate("el => getComputedStyle(el).textOverflow") == "ellipsis"
+
+    before = frame.locator(".ht_master .htCore tbody tr").evaluate_all(
+        "rows => rows.map(row => Math.round(row.getBoundingClientRect().height))"
+    )
+    frame.locator(".ht_master .wtHolder").first.evaluate(
+        """el => {
+            el.scrollLeft = 900;
+            el.dispatchEvent(new Event('scroll', { bubbles: true }));
+        }"""
+    )
+    page.wait_for_timeout(100)
+    after = frame.locator(".ht_master .htCore tbody tr").evaluate_all(
+        "rows => rows.map(row => Math.round(row.getBoundingClientRect().height))"
+    )
+    assert after == before
 
 
 def test_dhtb_sidecar_iframe_loads(page):
