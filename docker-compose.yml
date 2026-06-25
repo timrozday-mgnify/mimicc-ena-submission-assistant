@@ -83,7 +83,7 @@ services:
       - REDIS_URL=${REDIS_URL:-}
       # Browser-reachable URL of the dhtb sidecar (the browser talks to it
       # directly, not through this container) — see /api/health: dhtb_url.
-      - DHTB_URL=http://localhost:${MIMICC_DHTB_PORT:-8765}
+      - DHTB_URL=http://127.0.0.1:${MIMICC_DHTB_PORT:-8765}
     restart: unless-stopped
 
   # Local reads upload helper. Only started for fully-local single-user use
