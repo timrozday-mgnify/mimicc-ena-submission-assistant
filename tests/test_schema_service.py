@@ -83,7 +83,7 @@ def test_select_for_grid_writes_schema_json_and_registry(tmp_path):
 
     template = schema_service.select_for_grid("sample", yaml_text, dh_dir=dh_dir)
 
-    assert template.startswith("mimicc/")
+    assert template == "mimicc/MIMICC_Sample"
     schema_json_path = dh_dir / "templates" / "mimicc" / "schema.json"
     assert schema_json_path.exists()
     compiled = json.loads(schema_json_path.read_text())
@@ -91,7 +91,55 @@ def test_select_for_grid_writes_schema_json_and_registry(tmp_path):
     assert (dh_dir / "templates" / "mimicc" / "export.js").exists()
 
     registry = json.loads((dh_dir / "dh-template-registry.json").read_text())
-    assert registry["mimicc"] == compiled["name"]
+    assert registry["mimicc"] == "MIMICC_Sample"
+
+
+def test_select_for_grid_result_includes_logs(tmp_path):
+    result = schema_service.select_for_grid_result(
+        "sample",
+        schema_service.read_schema("mimicc_sample"),
+        dh_dir=tmp_path / "dh",
+    )
+
+    assert result["template"] == "mimicc/MIMICC_Sample"
+    assert result["role"] == "sample"
+    assert result["logs"]
+
+
+def test_select_for_grid_adapts_renderable_class_to_fixed_role_template(tmp_path):
+    dh_dir = tmp_path / "dh"
+    yaml_text = """
+name: merged_schema
+id: https://example.org/merged_schema
+classes:
+  dh_interface:
+    description: A DataHarmonizer interface
+  RenderableTable:
+    is_a: dh_interface
+    slots:
+      - alias
+slots:
+  alias:
+    title: Alias
+"""
+
+    template = schema_service.select_for_grid("sample", yaml_text, dh_dir=dh_dir)
+
+    assert template == "mimicc/MIMICC_Sample"
+    schema_json = json.loads((dh_dir / "templates" / "mimicc" / "schema.json").read_text())
+    assert "MIMICC_Sample" in schema_json["classes"]
+    assert "RenderableTable" not in schema_json["classes"]
+    registry = json.loads((dh_dir / "dh-template-registry.json").read_text())
+    assert registry["mimicc"] == "MIMICC_Sample"
+
+
+def test_select_for_grid_rejects_schema_without_renderable_classes(tmp_path):
+    with pytest.raises(ValueError, match="no renderable classes"):
+        schema_service.select_for_grid(
+            "sample",
+            "name: classless\nid: https://example.org/classless\nclasses: {}\n",
+            dh_dir=tmp_path / "dh",
+        )
 
 
 def test_select_for_grid_preserves_existing_export_js(tmp_path):
