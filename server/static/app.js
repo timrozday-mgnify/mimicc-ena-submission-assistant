@@ -626,15 +626,16 @@ let EXP_TEMPLATE_PATH = null; // "mimicc_experiment/<schema name>", or null if n
 async function initDhFrames() {
   let registry = {};
   try {
-    registry = await (await fetch("/dh/dh-template-registry.json")).json();
+    registry = await (await fetch(`/dh/dh-template-registry.json?t=${Date.now()}`, { cache: "no-store" })).json();
   } catch { /* dh-default not built at all — fall through, both show "missing" */ }
 
+  const cacheBust = Date.now();
   if (registry.mimicc) {
-    $("dhFrame").src = `/dh/?template=mimicc/${registry.mimicc}`;
+    $("dhFrame").src = `/dh/?template=mimicc/${registry.mimicc}&t=${cacheBust}`;
   }
   if (registry.mimicc_experiment) {
     EXP_TEMPLATE_PATH = `mimicc_experiment/${registry.mimicc_experiment}`;
-    $("expDhFrame").src = `/dh/?template=${EXP_TEMPLATE_PATH}`;
+    $("expDhFrame").src = `/dh/?template=${EXP_TEMPLATE_PATH}&t=${cacheBust}`;
     $("expDhMissing").style.display = "none";
     checkExpSchemaColumns();
   } else {

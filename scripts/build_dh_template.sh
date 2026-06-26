@@ -22,6 +22,8 @@ EXPERIMENT_SCHEMA="${ENA_DH_EXPERIMENT_SCHEMA:-$ROOT/schemas/mimicc_experiment.y
 TEMPLATE="mimicc"
 DEST="$ROOT/server/static/dh"
 
+python3 "$ROOT/scripts/patch_dataharmonizer_toolbar.py" "$DATAHARMONIZER"
+
 # Two separate templates — sample (mimicc_sample.yaml) and experiment
 # (mimicc_experiment.yaml) — built into the same bundle, mirroring the
 # Dockerfile's dh-builder stage. The experiment template is optional so this

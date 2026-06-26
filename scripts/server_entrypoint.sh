@@ -9,6 +9,12 @@ set -euo pipefail
 if [ -d /app/dh-default ] && [ -z "$(ls -A /app/server/static/dh 2>/dev/null)" ]; then
   mkdir -p /app/server/static/dh
   cp -R /app/dh-default/. /app/server/static/dh/
+elif [ -d /app/dh-default ]; then
+  mkdir -p /app/server/static/dh
+  # Keep the bind-mounted bundle's runtime-selected schemas, but refresh the
+  # built application assets (main.js, CSS, index.html, etc.) from the image.
+  (cd /app/dh-default && tar --exclude='./templates' --exclude='./dh-template-registry.json' -cf - .) |
+    (cd /app/server/static/dh && tar -xf -)
 fi
 
 # Apply database migrations before serving. When DATABASE_URL points at Postgres,

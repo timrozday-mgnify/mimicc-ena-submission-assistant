@@ -24,6 +24,8 @@ FROM node:20-slim AS dh-builder
 RUN apt-get update && apt-get install -y python3 python3-pip && rm -rf /var/lib/apt/lists/*
 
 COPY --from=dataharmonizer-src /src /dh-src
+COPY scripts/patch_dataharmonizer_toolbar.py /tmp/patch_dataharmonizer_toolbar.py
+RUN python3 /tmp/patch_dataharmonizer_toolbar.py /dh-src
 RUN pip install --no-cache-dir --break-system-packages -r /dh-src/requirements.txt
 
 # The MIMICC LinkML schema(s) are committed in this repo's schemas/ —
