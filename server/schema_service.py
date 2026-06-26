@@ -25,6 +25,7 @@ from linkml_lib import io as linkml_io
 # (server/static/app.js: initDhFrames). Selecting a schema for a role
 # overwrites that folder's schema.json rather than registering a new folder.
 ROLE_FOLDERS = {"sample": "mimicc", "experiment": "mimicc_experiment"}
+ROLE_TEMPLATE_CLASSES = {"sample": "MIMICC_Sample", "experiment": "MIMICC_Experiment"}
 
 _SLUG_RE = re.compile(r"[^a-z0-9_-]+")
 
@@ -198,18 +199,40 @@ def select_for_grid(role: str, yaml_text: str, *, dh_dir: Path) -> str:
     `<folder>/<schema name>` path the frontend points the iframe's
     `?template=` at.
     """
+    return select_for_grid_result(role, yaml_text, dh_dir=dh_dir)["template"]
+
+
+def select_for_grid_result(
+    role: str,
+    yaml_text: str,
+    *,
+    dh_dir: Path,
+    require_existing_template: bool = False,
+) -> dict[str, Any]:
+    """Compile and install a schema for one grid, returning frontend-facing details."""
     folder = ROLE_FOLDERS.get(role)
     if folder is None:
         raise ValueError(f"Unknown role: {role}. Expected one of {sorted(ROLE_FOLDERS)}")
+
+    tpl_dir = dh_dir / "templates" / folder
+    if require_existing_template:
+        if not (dh_dir / "index.html").exists():
+            raise ValueError("DataHarmonizer bundle is not built. Rebuild the bundle before selecting schemas.")
+        if not tpl_dir.exists():
+            raise ValueError(
+                f'DataHarmonizer template folder "{folder}" is missing. '
+                "Rebuild the bundle so the fixed sample/experiment templates are registered."
+            )
 
     try:
         schema = linkml_io.load_yaml_text(yaml_text)
     except yaml.YAMLError as exc:
         raise ValueError(f"Invalid YAML: {exc}") from exc
-    template_name = _template_class_name(schema)
+    source_template_name = _template_class_name(schema)
     compiled = dataharmonizer_compile.compile_schema_json(schema)
+    template_name = ROLE_TEMPLATE_CLASSES[role]
+    diagnostics = _adapt_compiled_schema_for_role(compiled, source_template_name, template_name)
 
-    tpl_dir = dh_dir / "templates" / folder
     tpl_dir.mkdir(parents=True, exist_ok=True)
     (tpl_dir / "schema.json").write_text(json.dumps(compiled, indent=2), encoding="utf-8")
     export_js = tpl_dir / "export.js"
@@ -224,4 +247,55 @@ def select_for_grid(role: str, yaml_text: str, *, dh_dir: Path) -> str:
     registry[folder] = template_name
     registry_path.write_text(json.dumps(registry, indent=2), encoding="utf-8")
 
-    return f"{folder}/{template_name}"
+    template = f"{folder}/{template_name}"
+    return {
+        "role": role,
+        "folder": folder,
+        "template_name": template_name,
+        "template": template,
+        "diagnostics": diagnostics,
+        "logs": [f'Installed "{template}" into DataHarmonizer folder "{folder}".'],
+    }
+
+
+def _adapt_compiled_schema_for_role(
+    compiled: dict[str, Any],
+    source_template_name: str,
+    target_template_name: str,
+) -> list[dict[str, str]]:
+    """Make a runtime schema fit the class name baked into the role's DH menu."""
+    if source_template_name == target_template_name:
+        return []
+
+    classes = compiled.get("classes")
+    if not isinstance(classes, dict) or source_template_name not in classes:
+        raise ValueError(f'Compiled schema does not contain renderable class "{source_template_name}"')
+    if target_template_name in classes:
+        raise ValueError(
+            f'Cannot adapt schema: both "{source_template_name}" and fixed class "{target_template_name}" exist'
+        )
+
+    class_def = classes.pop(source_template_name)
+    if isinstance(class_def, dict):
+        class_def["name"] = target_template_name
+    classes[target_template_name] = class_def
+    if compiled.get("name") == source_template_name:
+        compiled["name"] = target_template_name
+
+    for container_class in classes.values():
+        attributes = container_class.get("attributes") if isinstance(container_class, dict) else None
+        if not isinstance(attributes, dict):
+            continue
+        for attr in attributes.values():
+            if isinstance(attr, dict) and attr.get("range") == source_template_name:
+                attr["range"] = target_template_name
+
+    return [
+        {
+            "level": "info",
+            "message": (
+                f'Renamed renderable class "{source_template_name}" to fixed DataHarmonizer '
+                f'class "{target_template_name}" for this grid.'
+            ),
+        }
+    ]

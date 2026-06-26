@@ -5,6 +5,7 @@ sources, and select a schema for the sample/experiment DataHarmonizer grids.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import pathlib
 import shutil
@@ -14,6 +15,8 @@ import schema_service
 import views_core
 from django.http import HttpRequest, HttpResponse, HttpResponseNotAllowed, JsonResponse
 from pydantic import BaseModel, ValidationError
+
+logger = logging.getLogger(__name__)
 
 
 class SchemaSaveRequest(BaseModel):
@@ -151,7 +154,16 @@ def schemas_select(request: HttpRequest) -> JsonResponse:
         except ValueError as exc:
             return JsonResponse({"detail": str(exc)}, status=404)
     try:
-        template = schema_service.select_for_grid(req.role, yaml_text, dh_dir=views_core.DH_DIR)
+        result = schema_service.select_for_grid_result(
+            req.role,
+            yaml_text,
+            dh_dir=views_core.DH_DIR,
+            require_existing_template=True,
+        )
     except ValueError as exc:
+        logger.exception("Failed to select schema for role=%s schema_id=%s", req.role, req.schema_id)
         return JsonResponse({"detail": str(exc)}, status=400)
-    return JsonResponse({"template": template})
+    except Exception as exc:
+        logger.exception("Unexpected schema selection failure for role=%s schema_id=%s", req.role, req.schema_id)
+        return JsonResponse({"detail": f"Failed to compile/install schema: {exc}"}, status=500)
+    return JsonResponse(result)

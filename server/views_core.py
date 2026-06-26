@@ -37,8 +37,10 @@ def index(request: HttpRequest) -> FileResponse:
     return FileResponse((STATIC_DIR / "index.html").open("rb"))
 
 
-def _disable_cache_for_mutable_dh_files(response: FileResponse, path: str) -> FileResponse:
-    if path.endswith("schema.json") or path == "dh-template-registry.json":
+def _disable_cache_for_mutable_dh_files(response: FileResponse, path: str, document_root: str) -> FileResponse:
+    root = pathlib.Path(document_root).resolve()
+    is_dh_asset = root == DH_DIR.resolve() or root == DH_TEMPLATES_DIR.resolve()
+    if is_dh_asset and (path.endswith("schema.json") or path == "dh-template-registry.json"):
         response["Cache-Control"] = "no-store, max-age=0"
         response["Pragma"] = "no-cache"
         response["Expires"] = "0"
@@ -47,7 +49,7 @@ def _disable_cache_for_mutable_dh_files(response: FileResponse, path: str) -> Fi
 
 def static_serve_view(request: HttpRequest, path: str, document_root: str) -> FileResponse:
     response = static_serve(request, path, document_root=document_root)
-    return _disable_cache_for_mutable_dh_files(response, path)
+    return _disable_cache_for_mutable_dh_files(response, path, document_root)
 
 
 def serve_dh(request: HttpRequest, path: str = "") -> FileResponse:
@@ -56,7 +58,7 @@ def serve_dh(request: HttpRequest, path: str = "") -> FileResponse:
         candidate = DH_DIR / "index.html"
     relative_path = str(candidate.relative_to(DH_DIR))
     response = static_serve(request, relative_path, document_root=str(DH_DIR))
-    return _disable_cache_for_mutable_dh_files(response, relative_path)
+    return _disable_cache_for_mutable_dh_files(response, relative_path, str(DH_DIR))
 
 
 def health(request: HttpRequest) -> JsonResponse:

@@ -138,6 +138,57 @@ def test_dh_bundle_iframe_loads(page):
     assert after == before
 
 
+def _wait_for_dh_iframe_ready(page, frame_id):
+    page.wait_for_function(
+        """(frameId) => {
+            const frame = document.querySelector(frameId);
+            return Boolean(
+                frame?.contentWindow?.dataHarmonizer?.ready &&
+                frame?.contentDocument?.querySelector('.handsontable')
+            );
+        }""",
+        arg=frame_id,
+        timeout=20_000,
+    )
+    page.frame_locator(frame_id).locator(".ht_master .htCore tbody td").first.wait_for(timeout=15_000)
+
+
+def _wait_for_banner_text(page, selector, text, errors):
+    try:
+        page.wait_for_function(
+            "([selector, text]) => document.querySelector(selector)?.innerText.includes(text)",
+            arg=[selector, text],
+            timeout=35_000,
+        )
+    except Exception as exc:
+        banner_text = page.inner_text(selector)
+        raise AssertionError(f"{selector} never contained {text!r}. Banner: {banner_text!r}. Errors: {errors}") from exc
+
+
+def test_schema_selection_reloads_real_dh_iframes_without_toolbar_error(page):
+    errors = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
+
+    page.click("nav button:has-text('Samples')")
+    page.wait_for_selector("#sampleSchemaSelect option[value='mimicc_experiment']", state="attached")
+    page.select_option("#sampleSchemaSelect", "mimicc_experiment")
+    page.click("#dhPanel button:has-text('Use this schema')")
+    _wait_for_banner_text(page, "#prepBanner", "Switched the sample grid", errors)
+    assert "Switched the sample grid" in page.inner_text("#prepBanner")
+    _wait_for_dh_iframe_ready(page, "#dhFrame")
+
+    page.click("nav button:has-text('Reads')")
+    page.wait_for_selector("#expSchemaSelect option[value='mimicc_sample']", state="attached")
+    page.select_option("#expSchemaSelect", "mimicc_sample")
+    page.click("#expDhPanel button:has-text('Use this schema')")
+    _wait_for_banner_text(page, "#readsBanner", "Switched the experiment grid", errors)
+    assert "Switched the experiment grid" in page.inner_text("#readsBanner")
+    _wait_for_dh_iframe_ready(page, "#expDhFrame")
+
+    assert not [message for message in errors if "getColumnCoordinates" in message]
+
+
 def test_dhtb_sidecar_iframe_loads(page):
     # The dhtb iframe is cross-origin (separate container on MIMICC_DHTB_PORT)
     # — this is the integration the in-process fixture (test_ui.py) can't

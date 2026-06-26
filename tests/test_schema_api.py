@@ -12,6 +12,14 @@ import pytest
 pytest.importorskip("linkml")
 
 import views_core  # noqa: E402
+from django.test import RequestFactory  # noqa: E402
+
+
+def _make_dh_bundle(dh_dir):
+    (dh_dir / "templates" / "mimicc").mkdir(parents=True)
+    (dh_dir / "templates" / "mimicc_experiment").mkdir(parents=True)
+    (dh_dir / "index.html").write_text("<!doctype html><title>DH</title>", encoding="utf-8")
+    (dh_dir / "dh-template-registry.json").write_text("{}", encoding="utf-8")
 
 
 @pytest.fixture(autouse=True)
@@ -94,11 +102,14 @@ async def test_import_file_accepts_an_uploaded_yaml(client):
 
 async def test_select_compiles_schema_into_the_grid_folder(client, tmp_path, monkeypatch):
     dh_dir = tmp_path / "dh"
+    _make_dh_bundle(dh_dir)
     monkeypatch.setattr(views_core, "DH_DIR", dh_dir)
 
     r = await client.post("/api/schemas/select", json={"role": "sample", "schema_id": "mimicc_sample"})
     assert r.status_code == 200
     assert r.json()["template"] == "mimicc/MIMICC_Sample"
+    assert r.json()["role"] == "sample"
+    assert "logs" in r.json()
 
     schema_json = json.loads((dh_dir / "templates" / "mimicc" / "schema.json").read_text())
     assert schema_json["name"]
@@ -108,6 +119,7 @@ async def test_select_compiles_schema_into_the_grid_folder(client, tmp_path, mon
 
 async def test_select_with_inline_yaml(client, tmp_path, monkeypatch):
     dh_dir = tmp_path / "dh"
+    _make_dh_bundle(dh_dir)
     monkeypatch.setattr(views_core, "DH_DIR", dh_dir)
     yaml_text = """
 name: inline_schema
@@ -126,11 +138,13 @@ slots:
 
     r = await client.post("/api/schemas/select", json={"role": "experiment", "yaml": yaml_text})
     assert r.status_code == 200
-    assert r.json()["template"] == "mimicc_experiment/InlineTable"
+    assert r.json()["template"] == "mimicc_experiment/MIMICC_Experiment"
+    assert r.json()["diagnostics"]
 
 
 async def test_select_rejects_inline_yaml_without_renderable_classes(client, tmp_path, monkeypatch):
     dh_dir = tmp_path / "dh"
+    _make_dh_bundle(dh_dir)
     monkeypatch.setattr(views_core, "DH_DIR", dh_dir)
     yaml_text = "name: inline_schema\nid: https://example.org/inline_schema\nclasses: {}\n"
 
@@ -148,3 +162,27 @@ async def test_select_requires_schema_id_or_yaml(client):
 async def test_select_rejects_unknown_role(client):
     r = await client.post("/api/schemas/select", json={"role": "bogus", "yaml": "name: x\nclasses: {}\n"})
     assert r.status_code == 400
+
+
+async def test_select_reports_missing_dataharmonizer_bundle(client, tmp_path, monkeypatch):
+    dh_dir = tmp_path / "dh"
+    monkeypatch.setattr(views_core, "DH_DIR", dh_dir)
+
+    r = await client.post("/api/schemas/select", json={"role": "sample", "schema_id": "mimicc_sample"})
+
+    assert r.status_code == 400
+    assert "bundle is not built" in r.json()["detail"]
+
+
+def test_mutable_dataharmonizer_assets_are_not_cached(tmp_path, monkeypatch):
+    dh_dir = tmp_path / "dh"
+    _make_dh_bundle(dh_dir)
+    schema_path = dh_dir / "templates" / "mimicc" / "schema.json"
+    schema_path.write_text('{"name": "MIMICC_Sample"}', encoding="utf-8")
+    monkeypatch.setattr(views_core, "DH_DIR", dh_dir)
+    monkeypatch.setattr(views_core, "DH_TEMPLATES_DIR", dh_dir / "templates")
+    request = RequestFactory().get("/templates/mimicc/schema.json")
+
+    response = views_core.static_serve_view(request, "mimicc/schema.json", str(dh_dir / "templates"))
+
+    assert response["Cache-Control"] == "no-store, max-age=0"

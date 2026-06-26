@@ -592,6 +592,7 @@ function startDhAutosave() {
 $("dhFrame").addEventListener("load", startDhAutosave);
 $("dhFrame").addEventListener("load", () => propagateThemeToFrames(currentEffectiveTheme()));
 $("dhFrame").addEventListener("load", () => stabilizeDataHarmonizerFrameRows("dhFrame"));
+$("dhFrame").addEventListener("load", markDhFrameLoaded);
 
 // ---------------------------------------------------------------------------
 // Experiment metadata DataHarmonizer panel (Reads tab)
@@ -615,6 +616,72 @@ const EXP_FIELD_TITLES = {                     // manifest field -> experiment-D
 };
 
 let EXP_TEMPLATE_PATH = null; // "mimicc_experiment/<schema name>", or null if not built
+const DH_FRAME_READY_TIMEOUT_MS = 20000;
+
+function dhRoleConfig(role) {
+  if (role === "sample") {
+    return { frameId: "dhFrame", missingId: "dhMissing", bannerId: "prepBanner" };
+  }
+  return { frameId: "expDhFrame", missingId: "expDhMissing", bannerId: "readsBanner" };
+}
+
+function dhFrameUrl(templatePath, token) {
+  const params = new URLSearchParams({ template: templatePath, t: token });
+  return `/dh/?${params.toString()}`;
+}
+
+async function fetchDhRegistry() {
+  const res = await fetch(`/dh/dh-template-registry.json?t=${Date.now()}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`DataHarmonizer registry unavailable (HTTP ${res.status}).`);
+  return res.json();
+}
+
+function pointDhFrameAtTemplate(role, templatePath) {
+  const { frameId, missingId } = dhRoleConfig(role);
+  const frame = $(frameId);
+  if (!frame || !templatePath) return;
+  const token = String(Date.now());
+  frame.dataset.expectedDhLoad = token;
+  delete frame.dataset.loadedDhLoad;
+  frame.src = dhFrameUrl(templatePath, token);
+  if ($(missingId)) $(missingId).style.display = "none";
+  return token;
+}
+
+function markDhFrameLoaded(e) {
+  const frame = e.target;
+  if (frame?.dataset?.expectedDhLoad) {
+    frame.dataset.loadedDhLoad = frame.dataset.expectedDhLoad;
+  }
+}
+
+function waitForDhFrameReady(role, templatePath, token) {
+  const { frameId } = dhRoleConfig(role);
+  const frame = $(frameId);
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const poll = setInterval(() => {
+      try {
+        if (token && frame?.dataset?.loadedDhLoad !== token) return;
+        const win = frame?.contentWindow;
+        const doc = frame?.contentDocument;
+        if (win?.dataHarmonizer?.ready && doc?.querySelector(".handsontable")) {
+          clearInterval(poll);
+          resolve();
+          return;
+        }
+      } catch (e) {
+        clearInterval(poll);
+        reject(e);
+        return;
+      }
+      if (Date.now() - started > DH_FRAME_READY_TIMEOUT_MS) {
+        clearInterval(poll);
+        reject(new Error(`DataHarmonizer did not finish loading "${templatePath}". Check the browser console and server logs.`));
+      }
+    }, 250);
+  });
+}
 
 // Point both DH iframes at an explicit `?template=<folder>/<schema name>`,
 // looked up from the build's own registry rather than hardcoded — and
@@ -626,21 +693,23 @@ let EXP_TEMPLATE_PATH = null; // "mimicc_experiment/<schema name>", or null if n
 async function initDhFrames() {
   let registry = {};
   try {
-    registry = await (await fetch(`/dh/dh-template-registry.json?t=${Date.now()}`, { cache: "no-store" })).json();
-  } catch { /* dh-default not built at all — fall through, both show "missing" */ }
+    registry = await fetchDhRegistry();
+  } catch (e) {
+    console.error("Failed to load DataHarmonizer template registry", e);
+    /* dh-default not built at all — fall through, both show "missing" */
+  }
 
-  const cacheBust = Date.now();
   if (registry.mimicc) {
-    $("dhFrame").src = `/dh/?template=mimicc/${registry.mimicc}&t=${cacheBust}`;
+    pointDhFrameAtTemplate("sample", `mimicc/${registry.mimicc}`);
   }
   if (registry.mimicc_experiment) {
     EXP_TEMPLATE_PATH = `mimicc_experiment/${registry.mimicc_experiment}`;
-    $("expDhFrame").src = `/dh/?template=${EXP_TEMPLATE_PATH}&t=${cacheBust}`;
-    $("expDhMissing").style.display = "none";
+    pointDhFrameAtTemplate("experiment", EXP_TEMPLATE_PATH);
     checkExpSchemaColumns();
   } else {
     $("expDhMissing").style.display = "block";
   }
+  return registry;
 }
 
 // Warn (non-blocking) when the experiment schema doesn't use the exact
@@ -650,9 +719,10 @@ async function initDhFrames() {
 async function checkExpSchemaColumns() {
   const el = $("expSchemaWarning");
   el.className = "banner";
+  el.textContent = "";
   try {
     const folder = EXP_TEMPLATE_PATH.split("/")[0];
-    const schema = await (await fetch(`/templates/${folder}/schema.json`)).json();
+    const schema = await (await fetch(`/templates/${folder}/schema.json?t=${Date.now()}`, { cache: "no-store" })).json();
     const titles = new Set(
       Object.values(schema.classes || {}).flatMap((c) => Object.values(c.attributes || {}).map((a) => a.title))
     );
@@ -711,6 +781,7 @@ function startExpDhAutosave() {
 $("expDhFrame").addEventListener("load", startExpDhAutosave);
 $("expDhFrame").addEventListener("load", () => propagateThemeToFrames(currentEffectiveTheme()));
 $("expDhFrame").addEventListener("load", () => stabilizeDataHarmonizerFrameRows("expDhFrame"));
+$("expDhFrame").addEventListener("load", markDhFrameLoaded);
 
 function reloadExpDhFrame() {
   const frame = $("expDhFrame");
@@ -801,10 +872,22 @@ async function applySchemaSelection(role) {
 async function selectSchemaById(role, schemaId, bannerId) {
   const fallbackBanner = bannerId || (role === "sample" ? "prepBanner" : "readsBanner");
   try {
-    await api("/api/schemas/select", { method: "POST", body: JSON.stringify({ role, schema_id: schemaId }) });
-    await initDhFrames(); // re-fetch the registry + (re)point the grid's iframe at it
-    banner(fallbackBanner, true, `Switched the ${role} grid to "${schemaId}".`);
-  } catch (e) { banner(fallbackBanner, false, e.message); }
+    const result = await api("/api/schemas/select", { method: "POST", body: JSON.stringify({ role, schema_id: schemaId }) });
+    console.info("DataHarmonizer schema selection", result);
+    const loadToken = pointDhFrameAtTemplate(role, result.template);
+    if (role === "experiment") {
+      EXP_TEMPLATE_PATH = result.template;
+      checkExpSchemaColumns();
+    }
+    await waitForDhFrameReady(role, result.template, loadToken);
+    const diagnostics = Array.isArray(result.diagnostics) && result.diagnostics.length
+      ? ` ${result.diagnostics.map((d) => d.message || String(d)).join(" ")}`
+      : "";
+    banner(fallbackBanner, true, `Switched the ${role} grid to "${schemaId}".${diagnostics}`);
+  } catch (e) {
+    console.error(`Failed to switch ${role} DataHarmonizer schema`, e);
+    banner(fallbackBanner, false, e.message);
+  }
 }
 
 async function deleteSchemaFromLibrary(schemaId) {
