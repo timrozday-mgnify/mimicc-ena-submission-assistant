@@ -98,23 +98,46 @@ async def test_select_compiles_schema_into_the_grid_folder(client, tmp_path, mon
 
     r = await client.post("/api/schemas/select", json={"role": "sample", "schema_id": "mimicc_sample"})
     assert r.status_code == 200
-    template = r.json()["template"]
-    assert template.startswith("mimicc/")
+    assert r.json()["template"] == "mimicc/MIMICC_Sample"
 
     schema_json = json.loads((dh_dir / "templates" / "mimicc" / "schema.json").read_text())
     assert schema_json["name"]
     registry = json.loads((dh_dir / "dh-template-registry.json").read_text())
-    assert registry["mimicc"] == schema_json["name"]
+    assert registry["mimicc"] == "MIMICC_Sample"
 
 
 async def test_select_with_inline_yaml(client, tmp_path, monkeypatch):
     dh_dir = tmp_path / "dh"
     monkeypatch.setattr(views_core, "DH_DIR", dh_dir)
-    yaml_text = "name: inline_schema\nid: https://example.org/inline_schema\nclasses: {}\n"
+    yaml_text = """
+name: inline_schema
+id: https://example.org/inline_schema
+classes:
+  dh_interface:
+    description: A DataHarmonizer interface
+  InlineTable:
+    is_a: dh_interface
+    slots:
+      - alias
+slots:
+  alias:
+    title: Alias
+"""
 
     r = await client.post("/api/schemas/select", json={"role": "experiment", "yaml": yaml_text})
     assert r.status_code == 200
-    assert r.json()["template"] == "mimicc_experiment/inline_schema"
+    assert r.json()["template"] == "mimicc_experiment/InlineTable"
+
+
+async def test_select_rejects_inline_yaml_without_renderable_classes(client, tmp_path, monkeypatch):
+    dh_dir = tmp_path / "dh"
+    monkeypatch.setattr(views_core, "DH_DIR", dh_dir)
+    yaml_text = "name: inline_schema\nid: https://example.org/inline_schema\nclasses: {}\n"
+
+    r = await client.post("/api/schemas/select", json={"role": "experiment", "yaml": yaml_text})
+
+    assert r.status_code == 400
+    assert "no renderable classes" in r.json()["detail"]
 
 
 async def test_select_requires_schema_id_or_yaml(client):

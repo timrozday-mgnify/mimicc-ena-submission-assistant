@@ -165,6 +165,33 @@ def _normalise_slot_source_annotations(schema: dict) -> None:
             slot.pop("annotations", None)
 
 
+def _template_class_name(schema: dict[str, Any]) -> str:
+    """Return the class name DataHarmonizer should render for this schema."""
+    classes = schema.get("classes") or {}
+    if not isinstance(classes, dict):
+        raise ValueError("Schema has no renderable classes")
+
+    schema_name = schema.get("name")
+    if schema_name in classes and schema_name not in {"Container", "dh_interface"}:
+        return schema_name
+
+    dh_classes = [
+        class_name
+        for class_name, class_def in classes.items()
+        if class_name not in {"Container", "dh_interface"}
+        and isinstance(class_def, dict)
+        and class_def.get("is_a") == "dh_interface"
+    ]
+    if dh_classes:
+        return dh_classes[0]
+
+    renderable_classes = [class_name for class_name in classes if class_name not in {"Container", "dh_interface"}]
+    if renderable_classes:
+        return renderable_classes[0]
+
+    raise ValueError("Schema has no renderable classes")
+
+
 def select_for_grid(role: str, yaml_text: str, *, dh_dir: Path) -> str:
     """Compile `yaml_text` and install it as the served schema.json for the
     role's fixed DataHarmonizer template folder. Returns the
@@ -179,7 +206,7 @@ def select_for_grid(role: str, yaml_text: str, *, dh_dir: Path) -> str:
         schema = linkml_io.load_yaml_text(yaml_text)
     except yaml.YAMLError as exc:
         raise ValueError(f"Invalid YAML: {exc}") from exc
-    schema_name = schema.get("name") or folder
+    template_name = _template_class_name(schema)
     compiled = dataharmonizer_compile.compile_schema_json(schema)
 
     tpl_dir = dh_dir / "templates" / folder
@@ -194,7 +221,7 @@ def select_for_grid(role: str, yaml_text: str, *, dh_dir: Path) -> str:
         registry = json.loads(registry_path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         registry = {}
-    registry[folder] = schema_name
+    registry[folder] = template_name
     registry_path.write_text(json.dumps(registry, indent=2), encoding="utf-8")
 
-    return f"{folder}/{schema_name}"
+    return f"{folder}/{template_name}"

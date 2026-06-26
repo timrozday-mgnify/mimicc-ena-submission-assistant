@@ -83,7 +83,7 @@ def test_select_for_grid_writes_schema_json_and_registry(tmp_path):
 
     template = schema_service.select_for_grid("sample", yaml_text, dh_dir=dh_dir)
 
-    assert template.startswith("mimicc/")
+    assert template == "mimicc/MIMICC_Sample"
     schema_json_path = dh_dir / "templates" / "mimicc" / "schema.json"
     assert schema_json_path.exists()
     compiled = json.loads(schema_json_path.read_text())
@@ -91,7 +91,40 @@ def test_select_for_grid_writes_schema_json_and_registry(tmp_path):
     assert (dh_dir / "templates" / "mimicc" / "export.js").exists()
 
     registry = json.loads((dh_dir / "dh-template-registry.json").read_text())
-    assert registry["mimicc"] == compiled["name"]
+    assert registry["mimicc"] == "MIMICC_Sample"
+
+
+def test_select_for_grid_registry_uses_renderable_class_not_schema_name(tmp_path):
+    dh_dir = tmp_path / "dh"
+    yaml_text = """
+name: merged_schema
+id: https://example.org/merged_schema
+classes:
+  dh_interface:
+    description: A DataHarmonizer interface
+  RenderableTable:
+    is_a: dh_interface
+    slots:
+      - alias
+slots:
+  alias:
+    title: Alias
+"""
+
+    template = schema_service.select_for_grid("sample", yaml_text, dh_dir=dh_dir)
+
+    assert template == "mimicc/RenderableTable"
+    registry = json.loads((dh_dir / "dh-template-registry.json").read_text())
+    assert registry["mimicc"] == "RenderableTable"
+
+
+def test_select_for_grid_rejects_schema_without_renderable_classes(tmp_path):
+    with pytest.raises(ValueError, match="no renderable classes"):
+        schema_service.select_for_grid(
+            "sample",
+            "name: classless\nid: https://example.org/classless\nclasses: {}\n",
+            dh_dir=tmp_path / "dh",
+        )
 
 
 def test_select_for_grid_preserves_existing_export_js(tmp_path):
