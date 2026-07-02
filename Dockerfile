@@ -35,12 +35,17 @@ COPY --from=dh-builder-src /src/scripts/dh_build_steps.sh /tmp/dh_build_steps.sh
 # separate templates — see README "Experiment metadata schema". The
 # experiment template builds alongside the sample one if its schema file is
 # present, so the image build never breaks if it's ever missing.
-RUN if [ -f /tmp/schemas/mimicc_experiment.yaml ]; then \
-      DH_SKIP_BUILD=1 bash /tmp/dh_build_steps.sh /dh-src /tmp/schemas/mimicc_sample.yaml mimicc && \
-      bash /tmp/dh_build_steps.sh /dh-src /tmp/schemas/mimicc_experiment.yaml mimicc_experiment; \
-    else \
-      bash /tmp/dh_build_steps.sh /dh-src /tmp/schemas/mimicc_sample.yaml mimicc; \
-    fi
+# Stage every template with DH_SKIP_BUILD=1 (defers the one expensive
+# yarn build:web), then run the actual build once on the final invocation so
+# all staged folders — mimicc, mimicc_experiment and study — end up in the
+# bundle. The study folder is the fixed template slot the Studies tab points
+# at (server/schema_service.py: ROLE_FOLDERS["study"]); without it,
+# /api/schemas/select for the study role fails and the study grid never loads.
+RUN DH_SKIP_BUILD=1 bash /tmp/dh_build_steps.sh /dh-src /tmp/schemas/mimicc_sample.yaml mimicc && \
+    if [ -f /tmp/schemas/mimicc_experiment.yaml ]; then \
+      DH_SKIP_BUILD=1 bash /tmp/dh_build_steps.sh /dh-src /tmp/schemas/mimicc_experiment.yaml mimicc_experiment; \
+    fi && \
+    bash /tmp/dh_build_steps.sh /dh-src /tmp/schemas/SRA_study.yaml study
 
 FROM python:3.11-slim
 

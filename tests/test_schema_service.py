@@ -31,6 +31,18 @@ def test_list_schemas_seeds_from_bundled_defaults():
     assert "mimicc_experiment" in ids
 
 
+def test_every_listed_schema_id_is_readable():
+    # Regression: list_schemas reports id == path.stem, but read/select resolve
+    # via _schema_path (which slugifies/lower-cases). Upper-case-named bundled
+    # schemas (SRA_study.yaml, ENA_project.yaml, ERC*.yaml) were listed with an
+    # id that read_schema then 404'd on, so they couldn't be selected in any
+    # DataHarmonizer dropdown. Every listed id must round-trip.
+    for s in schema_service.list_schemas():
+        assert schema_service.read_schema(s["id"]), f"listed id not readable: {s['id']}"
+    # And the study schema specifically must be present + selectable-by-id.
+    assert "sra_study" in {s["id"] for s in schema_service.list_schemas()}
+
+
 def test_save_read_delete_round_trip():
     yaml_text = "name: my_schema\nid: https://example.org/my_schema\nclasses: {}\n"
     schema_id = schema_service.save_schema("My Schema!", yaml_text)

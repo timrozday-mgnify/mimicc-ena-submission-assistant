@@ -25,7 +25,13 @@ from linkml_lib import io as linkml_io
 # (server/static/app.js: initDhFrames). Selecting a schema for a role
 # overwrites that folder's schema.json rather than registering a new folder.
 ROLE_FOLDERS = {"sample": "mimicc", "experiment": "mimicc_experiment", "study": "study"}
-ROLE_TEMPLATE_CLASSES = {"sample": "MIMICC_Sample", "experiment": "MIMICC_Experiment", "study": "Study"}
+# Each value MUST equal the class name the role's fixed template folder was
+# built with (Dockerfile dh-builder stage) — sample/experiment use their
+# mimicc_*.yaml tree_root class, and study uses SRA_study.yaml's ("SRA_study").
+# Selecting a schema renames its class to this name; if it disagrees with the
+# built template, the registry/menu desync and DataHarmonizer throws
+# getColumnCoordinates on load (was "Study", which no built folder matched).
+ROLE_TEMPLATE_CLASSES = {"sample": "MIMICC_Sample", "experiment": "MIMICC_Experiment", "study": "SRA_study"}
 
 _SLUG_RE = re.compile(r"[^a-z0-9_-]+")
 
@@ -44,8 +50,14 @@ def _ensure_seeded() -> None:
         source_dir = _bootstrap.vendor_schemas_dir()
     except RuntimeError:
         return
+    # Seed under the slugified id (not the raw filename): list_schemas reports
+    # id == path.stem, but read/save/delete all resolve via _schema_path, which
+    # slugifies (lower-cases). If we kept an upper-case source name like
+    # SRA_study.yaml, the listed id "SRA_study" would resolve to sra_study.yaml
+    # and 404 — so every upper-case-named schema in the dropdown was
+    # unselectable. Writing the slug here keeps listing and lookup consistent.
     for src in source_dir.glob("*.yaml"):
-        (target / src.name).write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        _schema_path(src.stem).write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
 
 
 def _schema_path(schema_id: str) -> Path:

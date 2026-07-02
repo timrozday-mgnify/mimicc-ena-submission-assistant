@@ -102,6 +102,12 @@ def test_maximize_controls_for_reads_and_dataharmonizer(page):
     page.click("#readsAssignPanel button[aria-label='Minimize panel']")
     assert "maximized" not in page.get_attribute("#readsAssignPanel", "class")
 
+    page.click("nav button:has-text('Studies')")
+    page.click("#studyDhPanel button[aria-label='Maximize panel']")
+    assert "maximized" in page.get_attribute("#studyDhPanel", "class")
+    page.click("#studyDhPanel button[aria-label='Minimize panel']")
+    assert "maximized" not in page.get_attribute("#studyDhPanel", "class")
+
     page.click("nav button:has-text('Samples')")
     page.click("#dhPanel button[aria-label='Maximize panel']")
     assert "maximized" in page.get_attribute("#dhPanel", "class")
@@ -186,7 +192,30 @@ def test_schema_selection_reloads_real_dh_iframes_without_toolbar_error(page):
     assert "Switched the experiment grid" in page.inner_text("#readsBanner")
     _wait_for_dh_iframe_ready(page, "#expDhFrame")
 
+    # Studies tab: the study grid points at its own fixed template folder
+    # (schema_service ROLE_FOLDERS["study"] == "study", built by the Dockerfile
+    # dh-builder stage). Selecting any library schema compiles it into that
+    # slot and reloads the grid — same contract as sample/experiment above.
+    page.click("nav button:has-text('Studies')")
+    page.wait_for_selector("#studySchemaSelect option[value='sra_study']", state="attached")
+    page.select_option("#studySchemaSelect", "sra_study")
+    page.click("#studyDhPanel button:has-text('Use this schema')")
+    _wait_for_banner_text(page, "#studyBanner", "Switched the study grid", errors)
+    assert "Switched the study grid" in page.inner_text("#studyBanner")
+    _wait_for_dh_iframe_ready(page, "#studyDhFrame")
+
     assert not [message for message in errors if "getColumnCoordinates" in message]
+
+
+def test_study_grid_auto_loads_on_startup(page):
+    # initDhFrames() points the study frame at study/<registry.study> on load,
+    # same as the sample/experiment grids — so the Studies tab shows a real
+    # grid without the user having to pick a schema first.
+    page.click("nav button:has-text('Studies')")
+    # URLSearchParams percent-encodes the slash, so the src is
+    # `?template=study%2F<name>` — match the un-encoded prefix.
+    page.wait_for_function("() => document.getElementById('studyDhFrame').src.includes('template=study')")
+    _wait_for_dh_iframe_ready(page, "#studyDhFrame")
 
 
 def test_dhtb_sidecar_iframe_loads(page):
