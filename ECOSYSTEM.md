@@ -35,7 +35,7 @@ companions** (a schema editor, a bundle builder, and a local reads uploader).
                 └───────┬────────────────┬───────────────┬──────┘
                         │ imports        │ postMessage   │ HTTP
         ┌───────────────┴───┐    ┌───────┴─────────┐  ┌──┴──────────┐
-        │  Python libraries │    │ dataharmonizer- │  │ read-helper │
+        │  Python libraries │    │ dataharmonizer- │  │ read-helper-app │
         │  • ena-api-client │    │ template-builder│  │ (webin-cli  │
         │  • linkml-lib     │    │ (schema editor) │  │  on user PC)│
         │  • ena-submission-│    └───────┬─────────┘  └──────┬──────┘
@@ -62,12 +62,12 @@ companions** (a schema editor, a bundle builder, and a local reads uploader).
 
 | Project | Type | Language(s) | Purpose | Key dependencies | Consumed by |
 |---|---|---|---|---|---|
-| **mimicc-ena-submission-assistant** | Web app | Python/Django + vanilla JS | The product: end-to-end UI for studies, samples, reads submission to ENA | ena-api-client, ena-submission-toolkit, linkml-lib, DataHarmonizer, dh-builder, read-helper, dhtb | — (top of stack) |
+| **mimicc-ena-submission-assistant** | Web app | Python/Django + vanilla JS | The product: end-to-end UI for studies, samples, reads submission to ENA | ena-api-client, ena-submission-toolkit, linkml-lib, DataHarmonizer, dh-builder, read-helper-app, dhtb | — (top of stack) |
 | **dataharmonizer-template-builder** (dhtb) | Web app / embeddable component | Python/Django + React/TypeScript/Vite | Interactive editor for LinkML DataHarmonizer schemas (YAML ↔ tables ↔ schema.json) | linkml-lib, DataHarmonizer, dh-builder, Handsontable | mimicc-assistant (iframe + postMessage) |
 | **ena-api-client** | Library | Python | Typed client for ENA Webin Submission (XML) and Reports (JSON) APIs | httpx, pydantic | toolkit, assistant |
 | **linkml-lib** | Library | Python | LinkML utilities: schema I/O, editable-table conversion, XML/XSD↔LinkML, DataHarmonizer compilation, diagnostics | linkml, linkml-runtime, PyYAML | toolkit, assistant, dhtb |
 | **ena-submission-toolkit** | Library + CLI | Python | Schema-driven study/sample XML builders, unit normalisation, XSD validation, batch submit | ena-api-client, linkml-lib, lxml, typer | assistant |
-| **read-helper** | Docker service | Python (Django) | Runs `webin-cli` read uploads locally on the user's machine | django, django-cors-headers, gunicorn, pydantic, docker, webin-cli image | assistant (HTTP on :9100) |
+| **read-helper-app** | Electron app | TypeScript/Node | Runs Webin-CLI read uploads locally on the user's machine via Java | electron, node | assistant (HTTP on :9100) |
 | **dh-builder** | Docker service + executor | Shell + Python + Node | Rebuilds a DataHarmonizer web bundle from a LinkML schema on demand | DataHarmonizer source, Node/Yarn | assistant, dhtb |
 | **DataHarmonizer** (fork) | UI engine (vendored) | JavaScript + Handsontable | The spreadsheet editor/validator embedded for metadata entry | handsontable | assistant, dhtb, dh-builder |
 
@@ -89,7 +89,7 @@ validated SRA XML and submits it in batches. It is both an importable library an
 `dataharmonizer-template-builder` (dhtb) is a focused companion app for *editing the
 schema* that drives the grids.
 
-**Service companions (Docker, spawned on demand).** `read-helper` runs `webin-cli`
+**Service companion.** `read-helper-app` runs Webin-CLI
 on the user's machine; `dh-builder` rebuilds the DataHarmonizer bundle whenever the
 schema changes. Both are decoupled over HTTP/JSON or Docker, not Python imports.
 
@@ -105,7 +105,7 @@ Handsontable-based spreadsheet that both apps embed.
 The product. A **Django** application (Python 3.11+, Django 5.x) serving a
 **single-page vanilla-JavaScript** UI with **no Node/npm build step**. Runs in two
 modes: *local* (single-user auto-login, Postgres + companions via Docker Compose) and
-*hosted* (multi-user login, Redis-backed cache, each user runs their own read-helper).
+*hosted* (multi-user login, Redis-backed cache, each user runs their own read-helper-app).
 
 - **Backend** (`server/`): `views_*.py` split by domain (auth, credentials, sessions,
   records, schemas, core); `orm/models.py` (`User`, `SubmissionSession`, `ReadsRun`);
@@ -180,7 +180,7 @@ Key modules (`src/ena_submission_toolkit/`): `submit_sample.py`, `submit_study.p
 `prepare_dh_output.py`, `common.py`, `cli.py`. The assistant imports its
 `submit_batch()` builders directly.
 
-### 4.6 read-helper
+### 4.6 read-helper-app
 
 A local **Python/Django** companion that runs `webin-cli` read uploads from the
 user's machine — large read files and credentials never reach the server. Built on
@@ -231,14 +231,14 @@ interesting difference is the **frontend**.
 - **Vanilla JavaScript with no build step.** The app does not ship React or a
   bundler. The heavy interactive UI — the metadata spreadsheet — is the embedded
   **DataHarmonizer** bundle, so the app shell only needs to manage tabs, API calls
-  and the DataHarmonizer/read-helper lifecycle. Hand-written JS keeps the app
+  and the DataHarmonizer/read-helper-app lifecycle. Hand-written JS keeps the app
   build-free and dependency-light: there is no `package.json` to maintain.
 - **DataHarmonizer embedded as an iframe** with a patched `window.dataHarmonizer`
   bridge (`getExportJson()` / `loadExportJson()`) so grid exports flow back into
   Django sessions.
 - **Schema editing delegated to the dhtb sidecar** over `postMessage`, rather than
   reimplementing a schema editor in the assistant.
-- **Reads upload pushed to a local read-helper** so credentials and large files stay
+- **Reads upload pushed to a local read-helper-app** so credentials and large files stay
   on the user's machine — a deliberate trust/security boundary.
 
 ### dataharmonizer-template-builder — Python backend, *React/TypeScript/Vite* frontend
@@ -266,17 +266,17 @@ and edits* schemas interactively (React + TS pays for itself).
 | **DataHarmonizer** (fork `v2.1.0-mimicc`) | assistant, dhtb, dh-builder | Browser spreadsheet editor/validator for metadata entry; the UI engine both apps embed |
 | **Handsontable** 17.1.0 | inside DataHarmonizer; dhtb directly | The spreadsheet grid widget DataHarmonizer is built on |
 | **LinkML / linkml-runtime** (≥1.7 / ≥1.8) | via linkml-lib | Schema metamodel, validation and runtime used for all schema work |
-| **Django** 5.x | assistant, dhtb, read-helper | Backend framework: ORM, HTTP, auth, sessions, CSRF, cache abstraction (read-helper uses only the HTTP/routing layer) |
+| **Django** 5.x | assistant, dhtb | Backend framework: ORM, HTTP, auth, sessions, CSRF, cache abstraction |
 | **React 18 / TypeScript / Vite 6** | dhtb frontend | Component UI, typing and build for the interactive schema editor |
-| **Django / gunicorn / django-cors-headers** | read-helper | Local HTTP service (WSGI) exposing webin-cli logs via HTTP polling |
+| **Electron / Node** | read-helper-app | Native desktop app exposing Webin-CLI via loopback HTTP |
 | **httpx** (≥0.27) | ena-api-client, toolkit | HTTP transport to ENA |
 | **pydantic / pydantic-settings** (≥2) | ena-api-client, dhtb, assistant | Typed request/response models and env-based config |
 | **lxml** (≥5) | toolkit, linkml-lib | SRA XML building and XSD validation |
 | **Typer** | toolkit | CLI framework for `ena-submission-toolkit` |
 | **PyYAML** (≥6) | linkml-lib | LinkML YAML parsing/dumping |
 | **PostgreSQL / Redis** | assistant | Persistent session/state storage (Postgres); per-user credential + cache store (Redis, hosted mode) |
-| **Docker / docker-compose** | assistant, read-helper, dh-builder | Packaging and on-demand spawning of companion containers |
-| **webin-cli** (`enasequence/webin-cli` image) | read-helper | ENA's official read-upload tool, run in a container on the user's machine |
+| **Docker / docker-compose** | assistant, dh-builder | Packaging and on-demand spawning of companion containers |
+| **webin-cli** (`enasequence/webin-cli` image) | read-helper-app | ENA's official read-upload tool, run in a container on the user's machine |
 | **Node 20 / Yarn** | dh-builder | Build toolchain for the DataHarmonizer bundle |
 
 ---
@@ -292,12 +292,12 @@ and edits* schemas interactively (React + TS pays for itself).
   (`...DataHarmonizer.git#v2.1.0-mimicc`) and runs `dh-builder`'s build steps
   (Node/Yarn) to produce a bundle, which is volume-mounted into the assistant at
   `server/static/dh/`.
-- **read-helper and dhtb run as separate Docker Compose services.** read-helper is on
-  **:9100** (local profile only), dhtb on **:8765**. The assistant reaches read-helper
+- **read-helper-app and dhtb run as separate Docker Compose services.** read-helper-app is on
+  **:9100** (local profile only), dhtb on **:8765**. The assistant reaches read-helper-app
   over cross-origin HTTP (job submit + status polling) and dhtb over an iframe
   `postMessage` bridge.
 - **Data flows over three channels:** HTTP/JSON (assistant ↔ libraries via Python
-  imports, and assistant ↔ read-helper over the network), `postMessage` (assistant ↔
+  imports, and assistant ↔ read-helper-app over the network), `postMessage` (assistant ↔
   dhtb), and shared Docker volumes (the built DH bundle and the schema library).
 
 ```
@@ -309,7 +309,7 @@ linkml-lib ──────┤                                    │  │    
                  │                                            │
             dh-builder ──builds──► DataHarmonizer (fork)      │
                                                               │
-                                          read-helper ◄──HTTP─┘
+                                          read-helper-app ◄──HTTP─┘
 ```
 
 ---

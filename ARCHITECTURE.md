@@ -17,7 +17,7 @@ shape, rather than re-deciding them from scratch each time.
 HTTP API to a browser UI — i.e. mimicc-ena-submission-assistant's shape.
 
 **Does not apply to (or applies only partially):**
-- [read-helper](https://github.com/timrozday-mgnify/read-helper) — a
+- [read-helper-app](https://github.com/timrozday-mgnify/read-helper-app) — a
   stateless local helper that runs on a user's own machine; no database, no
   multi-user concerns.
 - [dataharmonizer-template-builder](https://github.com/timrozday-mgnify/dataharmonizer-template-builder)
