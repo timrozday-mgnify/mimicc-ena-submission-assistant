@@ -20,7 +20,7 @@ It ties together three existing tools:
 |---|---|---|
 | Create/modify/list/delete **studies & samples** | [`ena-api-client`](../ena-api-client) + [`ena-submission-toolkit`](https://github.com/timrozday-mgnify/ena-submission-toolkit) | `WebinClient` REST submission (server-side) + the `submit_study`/`submit_sample` batch builders |
 | Enter **sample metadata** | [DataHarmonizer](../DataHarmonizer) | embedded spreadsheet UI (Samples tab) → export → filter/rename → submit |
-| Submit **reads** | [`read-helper`](../read-helper) | a local **[read-helper](https://github.com/timrozday-mgnify/read-helper)** runs `enasequence/webin-cli` on the user's machine; the browser bridges manifest (server) → helper → result (server) |
+| Submit **reads** | [`read-helper-app`](../read-helper-app) | a local **[read-helper-app](https://github.com/timrozday-mgnify/read-helper-app)** Electron app runs Webin-CLI via Java on the user's machine; the browser bridges manifest (server) → helper → result (server) |
 
 New glue added here:
 
@@ -50,7 +50,7 @@ Browser ── login cookie ──► Django server (server/config/, views_*.py)
    │  fetch manifest + plan ◄─┘
    │  POST manifest + Webin creds
    ▼
-Local read-helper (127.0.0.1:9100, https://github.com/timrozday-mgnify/read-helper) ── docker run enasequence/webin-cli ──► ENA dropbox
+Local read-helper-app (127.0.0.1:9100, https://github.com/timrozday-mgnify/read-helper-app) ── java -jar webin-cli.jar ──► ENA dropbox
    │  SSE log stream ─► Browser ─► POST /api/reads/result (server updates the resume ledger)
 ```
 
@@ -66,14 +66,14 @@ Local read-helper (127.0.0.1:9100, https://github.com/timrozday-mgnify/read-help
   local mode — there's no login screen to attack in single-user mode).
 - **Reads**: the server builds the webin-cli manifest and the upload *plan*
   (what to upload vs. skip, via the ledger + ENA Reports API), but the upload
-  itself runs on the user's machine in the [read-helper](https://github.com/timrozday-mgnify/read-helper)
+  itself runs on the user's machine in the [read-helper-app](https://github.com/timrozday-mgnify/read-helper-app)
   (built from a pinned tag, see "Pinned dependency versions" below) — reads
   never pass through the server.
 
 ## Install & run
 
 Prerequisites: Docker Desktop. All sibling code (`DataHarmonizer`, `dh-builder`,
-`ena-submission-toolkit`, `read-helper`, `linkml-lib`, `ena-api-client`,
+`ena-submission-toolkit`, `read-helper-app`, `linkml-lib`, `ena-api-client`,
 `dataharmonizer-template-builder`) is pulled automatically at pinned versions
 during `docker compose build` — no sibling checkouts to clone first. Node/Yarn
 are **not** required on the host either — the Docker build compiles the
@@ -88,8 +88,8 @@ versions" below for where the sibling-repo pins live.
 # 1. Configure (admin/admin + bundled Postgres by default)
 cp .env.example .env   # optional — sensible defaults work out of the box
 
-# 2. Start the app + Postgres + DH sidecar + the local read-helper.
-#    The "local" profile includes the read-helper so reads upload works on one box.
+# 2. Start the app + Postgres + DH sidecar + the local read-helper-app.
+#    The "local" profile includes the read-helper-app so reads upload works on one box.
 COMPOSE_PROFILES=local docker compose up -d --build
 open http://localhost:9000
 ```
@@ -110,7 +110,7 @@ cp .env.example .env
 #   - change ADMIN_PASSWORD and set a long DJANGO_SECRET_KEY
 #   - set strong POSTGRES_PASSWORD
 #   - set ALLOWED_ORIGINS to your app's public origin if the API is cross-origin
-docker compose up -d --build      # db + app + dhtb (NOT the read-helper)
+docker compose up -d --build      # db + app + dhtb (NOT the read-helper-app)
 ```
 
 Put the app behind a TLS-terminating reverse proxy (the login cookie is marked
@@ -118,7 +118,7 @@ Put the app behind a TLS-terminating reverse proxy (the login cookie is marked
 `admin`, then create user accounts from the **Admin** tab. Each user has their
 own private sessions and submissions.
 
-Each user installs and runs the [read-helper](https://github.com/timrozday-mgnify/read-helper)
+Each user installs and runs the [read-helper-app](https://github.com/timrozday-mgnify/read-helper-app)
 on their **own workstation** (it is what uploads their reads directly to ENA).
 See its README; point its `MIMICC_APP_ORIGIN` at your hosted app so the
 browser page is allowed to drive the loopback helper.
@@ -327,12 +327,12 @@ button). Everything about a session is saved to disk and restored when you reope
    as admin automatically.
 1. **Session** — create or open a named session (required before the tabs unlock).
 2. **Credentials** — enter your Webin username/password (memory only; also forwarded to the local
-   read-helper when it's running, so it can upload).
+   read-helper-app when it's running, so it can upload).
 3. **Studies** — create a study → note the `PRJEB…` accession.
 4. **Samples** — enter metadata in DataHarmonizer, click **Export to Prepare** (autosaves every
    30s too — see "Export integration" above), **Prepare** (filter + rename), then **Submit** with
    checklist `ERC000025` → `ERS…`/`SAMEA…`.
-5. **Reads** — make sure the **read-helper** is running (the Reads tab shows "helper: running"),
+5. **Reads** — make sure the **read-helper-app** is running (the Reads tab shows "helper: running"),
    enter the absolute path to your **local** reads directory, **Scan** (the helper lists read
    groups), **Auto-assign samples** (or export/import the pairing as TSV), fill in
    platform/instrument/library fields in the **experiment metadata** DataHarmonizer panel (synced
@@ -356,7 +356,7 @@ pip install pytest pytest-asyncio anyio playwright
 python manage.py migrate
 python manage.py bootstrap_admin         # creates/updates the admin account from env
 
-# Run the server locally (reads submission needs the local read-helper running;
+# Run the server locally (reads submission needs the local read-helper-app running;
 # other tabs work without it). DEPLOYMENT_MODE defaults to local (auto-login).
 PYTHONPATH=server:. python manage.py runserver 0.0.0.0:9000
 ```
@@ -369,7 +369,7 @@ resolves them by default, with `ENA_DH_SCHEMA`/`ENA_DH_XSD`/
 ### Tests
 
 `pytest` (in-process Django test-client API tests + read-assignment unit tests)
-and Playwright (UI), mirroring `read-helper`'s patterns. No Docker or network
+and Playwright (UI), mirroring `read-helper-app`'s patterns. No Docker or network
 needed — the webin-cli runner and `ena_service` calls are mocked.
 
 ```bash
@@ -442,7 +442,7 @@ which runs the same image with a different `TEMPLATE`), and `dh_build_steps.sh`
 `dh-builder` stage and `scripts/build_dh_template.sh` above) live in the
 standalone [`dh-builder`](https://github.com/timrozday-mgnify/dh-builder) repo,
 pulled at a pinned tag — used only at image-build time now (there's no
-runtime/on-demand rebuild path), the same way [`read-helper`](https://github.com/timrozday-mgnify/read-helper)
+runtime/on-demand rebuild path), the same way [`read-helper-app`](https://github.com/timrozday-mgnify/read-helper-app)
 is pulled for reads upload.
 
 ### Pinned dependency versions
@@ -455,7 +455,7 @@ All sibling-repo code is pulled at a fixed git tag, never a local checkout or
   `name @ git+https://github.com/timrozday-mgnify/<repo>.git@<tag>` entries
   in `[project.dependencies]`.
 - **`Dockerfile`** — `DATAHARMONIZER_REF` / `DH_BUILDER_REF` build
-  args, and **`docker-compose.yml`** — the `read-helper` and `dhtb` services'
+  args, and **`docker-compose.yml`** — the `read-helper-app` and `dhtb` services'
   `build.context`/`additional_contexts` git URLs (`...git#<tag>`, or
   `...git#<tag>:<subdir>` for a subdirectory).
 
@@ -473,12 +473,12 @@ the repo root finds them all).
   held per-user in a cache (`server/credentials_store.py`) — in-process in local
   mode, or Redis in hosted mode (with persistence disabled, so they're still
   never written to disk) — and re-entered after a restart. They are also
-  forwarded to the local read-helper (in its memory only) so it can upload.
+  forwarded to the local read-helper-app (in its memory only) so it can upload.
 - **App accounts** are separate from Webin credentials. The admin account is
   (re)created from `ADMIN_USERNAME`/`ADMIN_PASSWORD` on every boot, so those env
   vars are authoritative for the admin password — change them before hosting.
 - **Reads** go through webin-cli (Docker) on the **user's machine** via the
-  read-helper, **not** the JAR path in `submit_reads.py` (that module is
+  read-helper-app, **not** the JAR path in `submit_reads.py` (that module is
   intentionally not imported — avoids its mgnify-toolkit dependency). The hosted
   server has no access to read files: no Docker socket, `/hostroot`, or reads
   mount.

@@ -20,7 +20,7 @@ services:
     volumes:
       # NB: the app doesn't mount the host Docker socket, the whole host
       # (/hostroot) or a reads workspace — reads upload happens on the user's
-      # machine via the read-helper, and sessions live in the browser.
+      # machine via the read-helper-app, and sessions live in the browser.
       #
       # Built DataHarmonizer bundle, served at /dh. Bind-mounted (rather than
       # baked into the image) so it can be updated in place; seeded from the
@@ -29,7 +29,7 @@ services:
       # Schema library: saved/imported LinkML schemas backing the grids.
       - ${MIMICC_SCHEMAS_DIR:-mimicc-schemas}:/schemas
     environment:
-      # Loopback port the browser expects the local read-helper on.
+      # Loopback port the browser expects the local read-helper-app on.
       - HELPER_PORT=${HELPER_PORT:-9100}
       - SCHEMAS_CONTAINER_DIR=/schemas
       # Browser-reachable URL of the dhtb sidecar (the browser talks to it
@@ -37,29 +37,6 @@ services:
       - DHTB_URL=http://127.0.0.1:${MIMICC_DHTB_PORT:-8765}
     restart: unless-stopped
 
-  # Local reads upload helper. Only started for fully-local single-user use
-  # (profile "local"); in a hosted deployment each user runs the helper on their
-  # own workstation instead (see https://github.com/timrozday-mgnify/read-helper).
-  # Start it locally with:
-  #   COMPOSE_PROFILES=local docker compose up -d --build
-  read-helper:
-    profiles: ["local"]
-    # See mimicc-server's platform comment above.
-    platform: ${MIMICC_PLATFORM:-linux/arm64}
-    build:
-      # Pinned tag — see README "Pinned dependency versions" for how to bump it.
-      context: https://github.com/timrozday-mgnify/read-helper.git#v0.1.0
-    container_name: mimicc-read-helper
-    ports:
-      - "127.0.0.1:${HELPER_PORT:-9100}:9100"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /:/hostroot
-    environment:
-      - HELPER_PORT=${HELPER_PORT:-9100}
-      - HOST_HOME=${HOME}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
-    restart: unless-stopped
 
   # DataHarmonizer Template Builder: edit/preview LinkML schemas before
   # selecting them via /api/schemas/select. Sibling service the main app

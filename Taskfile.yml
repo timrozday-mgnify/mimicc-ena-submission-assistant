@@ -31,9 +31,17 @@ tasks:
       - unset DOCKER_DEFAULT_PLATFORM && docker compose up --build {{.CLI_ARGS}}
 
   up:local:
-    desc: Start the stack including the local-only read-helper profile
+    desc: Start the stack and the local read-helper-app companion (compose in background, then app in foreground)
     cmds:
-      - unset DOCKER_DEFAULT_PLATFORM && COMPOSE_PROFILES=local docker compose up --build {{.CLI_ARGS}}
+      - unset DOCKER_DEFAULT_PLATFORM && docker compose up --build -d {{.CLI_ARGS}}
+      - task: start:read-helper-app
+
+  start:read-helper-app:
+    desc: Start the read-helper-app Electron companion (../read-helper-app)
+    dir: ../read-helper-app
+    cmds:
+      - npm run dev
+
 
   build:
     desc: Build images without starting containers
