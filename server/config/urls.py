@@ -9,6 +9,7 @@ urlpatterns = [
     path("", views_core.index),
     path("api/health", views_core.health),
     # Studies / samples / records / reads
+    path("api/study/prepare", views_records.study_prepare),
     path("api/study/submit", views_records.study_submit),
     path("api/study/list", views_records.study_list),
     path("api/sample/prepare", views_records.sample_prepare),

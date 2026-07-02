@@ -65,6 +65,7 @@ async function dbCreateSession(name, testEnv) {
     state: null, state_saved_at: null,
     dh_export_sample: null, dh_export_sample_saved_at: null,
     dh_export_experiment: null, dh_export_experiment_saved_at: null,
+    dh_export_study: null, dh_export_study_saved_at: null,
     reads_runs: {},
   };
   await idbPut(rec);
@@ -78,6 +79,7 @@ async function dbGetSession(id) {
     state: r.state,
     dh_export: r.dh_export_sample, dh_saved_at: r.dh_export_sample_saved_at,
     exp_dh_export: r.dh_export_experiment, exp_dh_saved_at: r.dh_export_experiment_saved_at,
+    study_dh_export: r.dh_export_study, study_dh_saved_at: r.dh_export_study_saved_at,
     reads_runs: r.reads_runs || {},
   };
 }
@@ -93,7 +95,7 @@ async function dbSaveDhExport(id, kind, exportJson) {
   const r = await idbGet(id);
   if (!r) throw new Error("Session not found");
   const now = new Date().toISOString();
-  const field = kind === "experiment" ? "dh_export_experiment" : "dh_export_sample";
+  const field = kind === "experiment" ? "dh_export_experiment" : kind === "study" ? "dh_export_study" : "dh_export_sample";
   r[field] = exportJson; r[field + "_saved_at"] = now; r.updated_at = now;
   await idbPut(r);
   return now;
@@ -170,11 +172,11 @@ async function openSession(id) {
 // tables and logs are captured as rendered HTML/text so they restore exactly;
 // interactive state (run rows, samples, prepared records) is captured as data.
 const _FIELD_IDS = [
-  "studyJson", "studyHold", "sampleFilter", "sampleChecklist", "sampleHold",
+  "studyHold", "sampleFilter", "sampleChecklist", "sampleHold",
   "defaultStudy", "recEntity", "recStatus", "dhExport", "readsLocalDir",
 ];
 const _CHECK_IDS = ["studyModify", "studyPublic", "sampleModify", "samplePublic", "forceReupload"];
-const _RESULT_IDS = ["studyOut", "prepOut", "sampleOut", "recOut", "readsResults"];
+const _RESULT_IDS = ["studyPrepOut", "studyOut", "prepOut", "sampleOut", "recOut", "readsResults"];
 const _LOG_IDS = ["readsLog", "recLog"];
 
 // Pristine, blank-slate values for every field/check/result/log, captured
@@ -208,6 +210,7 @@ function collectState() {
     v: 1, test: TEST, fields, checks, resultsHtml, logs,
     runRows: RUN_ROWS, readSamples: READ_SAMPLES, selectedSample: SELECTED_SAMPLE,
     prepared: window.__prepared || null,
+    preparedStudies: window.__preparedStudies || null,
   };
 }
 
@@ -229,6 +232,7 @@ function resetToBlank() {
   SELECTED_SAMPLE = "";
   READS_RUNS = {};
   window.__prepared = undefined;
+  window.__preparedStudies = undefined;
   renderRunTable();
   renderReadSampleList();
   $("sampleSubmitBtn").disabled = true;
@@ -237,6 +241,8 @@ function resetToBlank() {
   reloadDhFrame(); // back to DataHarmonizer's empty default template
   setExpDhSavedIndicator(null);
   reloadExpDhFrame();
+  setStudyDhSavedIndicator(null);
+  reloadStudyDhFrame();
 }
 
 function reloadDhFrame() {
@@ -268,6 +274,7 @@ async function applyState(data) {
     READ_SAMPLES = st.readSamples || [];
     SELECTED_SAMPLE = st.selectedSample || "";
     window.__prepared = st.prepared || undefined;
+    window.__preparedStudies = st.preparedStudies || undefined;
     renderRunTable();
     renderReadSampleList();
     $("sampleSubmitBtn").disabled = !(window.__prepared && window.__prepared.length);
@@ -282,6 +289,10 @@ async function applyState(data) {
     if (data.exp_dh_export) {
       setExpDhSavedIndicator(data.exp_dh_saved_at);
       loadExpDhGridWhenReady(data.exp_dh_export);
+    }
+    if (data.study_dh_export) {
+      setStudyDhSavedIndicator(data.study_dh_saved_at);
+      loadStudyDhGridWhenReady(data.study_dh_export);
     }
   } finally {
     suppressSave = false;

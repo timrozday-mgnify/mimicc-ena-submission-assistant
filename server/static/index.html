@@ -198,24 +198,38 @@
 
   <!-- STUDIES -->
   <section class="tab" id="tab-studies">
+    <div class="panel maximizable" id="studyDhPanel">
+      <div class="panel-head">
+        <h2>1 · Enter study metadata (DataHarmonizer)</h2>
+        <div class="inline">
+          <button class="btn secondary" type="button" onclick="exportStudyDhNow()">Export</button>
+          <span class="muted" id="studyDhSavedIndicator">Last saved: never</span>
+          <button class="icon-btn maximize-toggle-btn" type="button" onclick="togglePanelMax('studyDhPanel')" title="Maximize panel" aria-label="Maximize panel">⛶</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="row" style="margin-bottom:10px">
+          <div><label>Schema</label><select id="studySchemaSelect"></select></div>
+          <div style="align-self:flex-end"><button class="btn secondary" onclick="applySchemaSelection('study')">Use this schema</button></div>
+        </div>
+        <div class="dh-embed-wrap" id="studyDhWrap"><iframe class="dh-embed-frame" id="studyDhFrame"></iframe></div>
+        <p class="muted" id="studyDhMissing">No study schema selected yet. Choose a schema above (e.g. <code>SRA_study</code>) and click <b>Use this schema</b>.</p>
+      </div>
+    </div>
     <div class="panel">
-      <h2>Create / modify studies</h2>
-      <p class="muted">Provide study records as a JSON array (keys: <code>alias</code>, <code>STUDY_TITLE</code>,
-        <code>STUDY_ABSTRACT</code>/<code>STUDY_DESCRIPTION</code>, optional <code>CENTER_PROJECT_NAME</code>).</p>
-      <textarea id="studyJson">[
-  {
-    "alias": "mimicc-run-A",
-    "STUDY_TITLE": "MIMICC continuous culture run A",
-    "STUDY_ABSTRACT": "20-member synthetic gut community grown in continuous culture."
-  }
-]</textarea>
-      <div class="row" style="margin-top:8px">
+      <h2>2 · Prepare study export</h2>
+      <div class="actions"><button class="btn" onclick="prepareStudies()">Prepare</button></div>
+      <div class="scroll" id="studyPrepOut"></div>
+    </div>
+    <div class="panel">
+      <h2>3 · Submit studies</h2>
+      <div class="row">
         <div><label>Hold until (optional, YYYY-MM-DD)</label><input id="studyHold" placeholder="2026-12-01"></div>
         <div class="inline" style="align-self:flex-end"><input type="checkbox" id="studyModify"><label style="margin:0">modify existing (match by alias/title)</label></div>
         <div class="inline" style="align-self:flex-end"><input type="checkbox" id="studyPublic"><label style="margin:0">release public after</label></div>
       </div>
       <div class="actions">
-        <button class="btn" onclick="submitStudies()">Submit studies</button>
+        <button class="btn" onclick="submitStudies()">Submit prepared studies</button>
         <button class="btn secondary" onclick="loadRecords('studies','studyOut')">List my studies</button>
       </div>
       <div class="banner" id="studyBanner"></div>

@@ -3,9 +3,24 @@
 // ---------------------------------------------------------------------------
 // Studies
 // ---------------------------------------------------------------------------
+async function prepareStudies() {
+  const dh = studyDhApi();
+  if (!dh) { banner("studyBanner", false, "Study DataHarmonizer isn't ready. Select a schema first."); return; }
+  try {
+    const exportJson = dh.getExportJson();
+    await saveStudyDhExport(exportJson, { silent: true });
+    const r = await api("/api/study/prepare", { method: "POST", body: JSON.stringify({ export: exportJson }) });
+    window.__preparedStudies = r.records;
+    banner("studyBanner", true, `Prepared ${r.records.length} study record(s). Ready to submit.`);
+    renderTable("studyPrepOut", r.records);
+    scheduleSave();
+  } catch (e) { banner("studyBanner", false, e.message); }
+}
+
 async function submitStudies() {
   try {
-    const records = JSON.parse($("studyJson").value);
+    const records = window.__preparedStudies;
+    if (!records || !records.length) { banner("studyBanner", false, "No prepared studies. Click Prepare first."); return; }
     const r = await api("/api/study/submit", { method: "POST", body: JSON.stringify({
       records, test: TEST, modify: $("studyModify").checked,
       hold_until: $("studyHold").value || null, public: $("studyPublic").checked,

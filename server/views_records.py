@@ -19,6 +19,7 @@ from typing import Any
 
 import ena_service
 import read_assign
+import views_core
 import webin_creds
 from django.http import HttpRequest, HttpResponseNotAllowed, JsonResponse
 from pydantic import BaseModel, ValidationError
@@ -47,6 +48,10 @@ class StudySubmitRequest(BaseModel):
     modify: bool = False
     hold_until: str | None = None
     public: bool = False
+
+
+class StudyPrepareRequest(BaseModel):
+    export: dict[str, Any]
 
 
 class PrepareRequest(BaseModel):
@@ -154,6 +159,21 @@ def study_list(request: HttpRequest) -> JsonResponse:
     return JsonResponse(
         ena_service.list_records(creds, "studies", test=test, status=status, max_results=max_results), safe=False
     )
+
+
+def study_prepare(request: HttpRequest) -> JsonResponse:
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+    try:
+        req = _parse(StudyPrepareRequest, request)
+    except (ValidationError, json.JSONDecodeError) as exc:
+        return JsonResponse({"detail": str(exc)}, status=422)
+    try:
+        prepared = ena_service.prepare_studies(req.export, dh_dir=views_core.DH_DIR)
+    except ValueError as exc:
+        return JsonResponse({"detail": str(exc)}, status=400)
+    records = ena_service.records_from_container(prepared)
+    return JsonResponse({"records": records})
 
 
 # ---------------------------------------------------------------------------
