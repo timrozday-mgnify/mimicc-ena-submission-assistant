@@ -1,7 +1,7 @@
 """Playwright UI tests against the real `docker compose` stack.
 
 Unlike ``test_ui.py`` (an in-process WSGI thread with ``ena_service`` mocked),
-this drives the actual built images: real Postgres-backed sessions and a real
+this drives the actual built images: the real stateless server and a real
 ``dhtb`` sidecar container reached over the network. There's no way to
 monkeypatch a function inside a process this test doesn't run, so this file
 only covers what doesn't depend on mocked ENA data (page load, sessions, tab
@@ -47,7 +47,7 @@ def _open_session(pg):
 def compose_url():
     env = {**os.environ, "MIMICC_PORT": _PORT, "MIMICC_DHTB_PORT": _DHTB_PORT}
     subprocess.run(
-        ["docker", "compose", "up", "--build", "-d", "db", "mimicc-server", "dhtb"],
+        ["docker", "compose", "up", "--build", "-d", "mimicc-server", "dhtb"],
         cwd=_REPO,
         env=env,
         check=True,

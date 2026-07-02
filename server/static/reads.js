@@ -6,6 +6,67 @@
 // The local reads directory the helper scans/uploads from (on the user's machine).
 function readsLocalDir() { return ($("readsLocalDir").value || "").trim(); }
 
+let _dirPickerPath = "/";
+
+async function browseDir() {
+  if (!HELPER_OK && !(await detectHelper())) {
+    banner("readsBanner", false, "The local upload helper isn't running — start it, then Browse will work."); return;
+  }
+  _dirPickerPath = readsLocalDir() || "/";
+  $("dirPickerModal").classList.add("show");
+  _browseNav(_dirPickerPath);
+}
+
+function closeDirPicker() { $("dirPickerModal").classList.remove("show"); }
+
+function confirmDirPicker() {
+  $("readsLocalDir").value = _dirPickerPath;
+  scheduleSave();
+  closeDirPicker();
+}
+
+async function _browseNav(path) {
+  _dirPickerPath = path;
+  // breadcrumb
+  const parts = path.replace(/\/$/, "").split("/").filter(Boolean);
+  const crumb = $("dirPickerBreadcrumb");
+  crumb.innerHTML = "";
+  const rootLink = document.createElement("a");
+  rootLink.href = "#"; rootLink.textContent = "/";
+  rootLink.onclick = (e) => { e.preventDefault(); _browseNav("/"); };
+  crumb.appendChild(rootLink);
+  let built = "";
+  parts.forEach((p) => {
+    built += "/" + p;
+    const sep = document.createTextNode(" / ");
+    const link = document.createElement("a");
+    const capture = built;
+    link.href = "#"; link.textContent = p;
+    link.onclick = (e) => { e.preventDefault(); _browseNav(capture); };
+    crumb.append(sep, link);
+  });
+
+  const list = $("dirPickerList");
+  list.innerHTML = '<p class="muted" style="padding:8px">Loading…</p>';
+  try {
+    const r = await helperApi(`/api/browse?path=${encodeURIComponent(path)}`);
+    list.innerHTML = "";
+    if (!r.entries.length) {
+      list.innerHTML = '<p class="muted" style="padding:8px">No subdirectories.</p>';
+      return;
+    }
+    r.entries.forEach(({ name, path: epath }) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "session-row";
+      btn.style.cssText = "width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:6px 10px;font:inherit";
+      btn.textContent = "📁 " + name;
+      btn.onclick = () => _browseNav(epath);
+      list.appendChild(btn);
+    });
+  } catch (e) { list.innerHTML = `<p class="muted" style="padding:8px">Error: ${e.message}</p>`; }
+}
+
 function blankRun(group) {
   return {
     NAME: group.group, files: group.files, paired: group.paired,
@@ -329,7 +390,7 @@ function appendReadsLog(text) {
 async function submitReads(doSubmit) {
   $("readsLog").textContent = "";
   $("readsResults").innerHTML = "";
-  const sessionId = SESSION ? SESSION.id : null;
+  const sessionName = SESSION ? SESSION.name : null;
   let runs;
   try {
     runs = mergeExperimentMetadata(RUN_ROWS);
@@ -343,7 +404,7 @@ async function submitReads(doSubmit) {
 
   try {
     const { plan, warnings } = await api("/api/reads/plan", { method: "POST", body: JSON.stringify({
-      runs, test: TEST, session_id: sessionId, force_reupload: $("forceReupload").checked,
+      runs, test: TEST, session_name: sessionName, ledger: READS_RUNS, force_reupload: $("forceReupload").checked,
     }) });
     (warnings || []).forEach((w) => appendReadsLog("WARNING: " + w));
 
@@ -356,7 +417,7 @@ async function submitReads(doSubmit) {
         continue;
       }
       appendReadsLog(`=== ${entry.name} === uploading via local helper…`);
-      const result = await uploadOneViaHelper(entry, dir, doSubmit, sessionId);
+      const result = await uploadOneViaHelper(entry, dir, doSubmit);
       results.push(result);
       recordLedger(result);
       renderRunTable();
@@ -374,7 +435,7 @@ async function submitReads(doSubmit) {
 }
 
 // Run one upload on the local helper and relay the outcome back to the server.
-function uploadOneViaHelper(entry, inputDir, doSubmit, sessionId) {
+function uploadOneViaHelper(entry, inputDir, doSubmit) {
   return new Promise(async (resolve) => {
     let job;
     try {
@@ -397,7 +458,7 @@ function uploadOneViaHelper(entry, inputDir, doSubmit, sessionId) {
         let result;
         try {
           const r = await api("/api/reads/result", { method: "POST", body: JSON.stringify({
-            session_id: sessionId, name: entry.name, alias: entry.alias, stable_alias: entry.stable_alias,
+            name: entry.name, alias: entry.alias, stable_alias: entry.stable_alias,
             exit_code: m.exit_code, log: m.log || "", sample: entry.sample, study: entry.study,
             experiment_accession: m.experiment_accession, run_accession: m.run_accession,
           }) });

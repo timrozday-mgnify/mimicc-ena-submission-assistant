@@ -1,30 +1,13 @@
 from __future__ import annotations
 
-import views_auth
 import views_core
-import views_credentials
 import views_records
 import views_schemas
-import views_sessions
 from django.urls import path, re_path
 
 urlpatterns = [
     path("", views_core.index),
     path("api/health", views_core.health),
-    # Auth / accounts
-    path("api/auth/login", views_auth.login),
-    path("api/auth/logout", views_auth.logout),
-    path("api/auth/me", views_auth.me),
-    path("api/admin/users", views_auth.users_collection),
-    path("api/admin/users/<int:user_id>", views_auth.users_delete),
-    path("api/admin/users/<int:user_id>/password", views_auth.users_set_password),
-    # Webin credentials
-    path("api/credentials", views_credentials.credentials_collection),
-    # Sessions
-    path("api/sessions", views_sessions.sessions_collection),
-    path("api/sessions/<str:session_id>", views_sessions.sessions_detail),
-    path("api/sessions/<str:session_id>/state", views_sessions.sessions_state),
-    path("api/sessions/<str:session_id>/dh-export/<str:kind>", views_sessions.sessions_dh_export),
     # Studies / samples / records / reads
     path("api/study/submit", views_records.study_submit),
     path("api/study/list", views_records.study_list),

@@ -133,10 +133,11 @@ LinkML YAML — plus produces a DataHarmonizer preview. Runs standalone or embed
 - **Type:** full-stack web app — **Django** backend + **React 18 / TypeScript /
   Vite 6** frontend. Not published to npm/PyPI; deployed as a single Docker container
   on port **8765**.
-- **Backend** (`src/dataharmonizer_template_builder/`): `conversion.py`, `tables.py`,
-  `table_sync.py`, `dh_compile.py`, `validation.py` — all thin wrappers over
-  `linkml-lib` (`edit_tables`, `io`, `dataharmonizer_compile`, `diagnostics`). In-memory
-  per-session store.
+- **Backend** (`src/dataharmonizer_template_builder/`): `conversion.py` and
+  `dh_compile.py` call `linkml-lib` (`edit_tables`, `io`, `dataharmonizer_compile`)
+  directly — no wrapper layer; `table_sync.py` holds the table-merge/diff logic.
+  Schema-handling code (including annotation handling) lives in `linkml-lib` itself,
+  not re-implemented here. In-memory per-session store.
 - **Frontend** (`frontend/src/`): `App.tsx` (the editor), `DataGrid.tsx`
   (Handsontable wrapper), `api.ts` (HTTP client), `tableSync.ts` (client-side mirror
   of the backend sync logic).
@@ -164,7 +165,9 @@ tooling. Built on **linkml** / **linkml-runtime** / **PyYAML**. Key modules
 (LinkML → DataHarmonizer `schema.json`), `schema.py` (introspection, `UnitRule`),
 `pipeline.py` / `transform.py` / `dh_data.py` (build/merge schemas, filter exports),
 `diagnostics.py`. It is the shared schema brain consumed by the toolkit, the
-assistant *and* dhtb.
+assistant *and* dhtb — dhtb calls these modules directly rather than through its own
+wrapper layer, and schema logic (e.g. annotation handling) is pushed down here rather
+than living in dhtb.
 
 ### 4.5 ena-submission-toolkit
 
@@ -240,8 +243,9 @@ interesting difference is the **frontend**.
 
 ### dataharmonizer-template-builder — Python backend, *React/TypeScript/Vite* frontend
 
-- **Python/Django** backend again, but here it is a thin wrapper around `linkml-lib`
-  doing YAML ↔ editable-tables ↔ `schema.json` conversion and validation.
+- **Python/Django** backend again, but here it calls `linkml-lib` directly for the
+  YAML ↔ editable-tables ↔ `schema.json` conversion and validation, with no
+  intermediate wrapper modules of its own.
 - **React + TypeScript + Vite** frontend — unlike the assistant — because this app is
   a genuinely interactive *editor*: it maintains real client-side state (tables,
   cross-references between classes/slots/enums, edit history, diagnostics, preview)

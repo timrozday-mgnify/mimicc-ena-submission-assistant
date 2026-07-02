@@ -11,30 +11,6 @@ if [ -d /app/dh-default ] && [ -z "$(ls -A /app/server/static/dh 2>/dev/null)" ]
   cp -R /app/dh-default/. /app/server/static/dh/
 fi
 
-# Apply database migrations before serving. When DATABASE_URL points at Postgres,
-# wait for it to accept connections first (the db service may still be starting).
-if [ -n "${DATABASE_URL:-}" ]; then
-  echo "Waiting for the database…"
-  for _ in $(seq 1 60); do
-    if python -c "
-import os, sys
-from urllib.parse import urlparse
-import psycopg
-u = urlparse(os.environ['DATABASE_URL'])
-try:
-    psycopg.connect(host=u.hostname, port=u.port or 5432, user=u.username,
-                    password=u.password, dbname=u.path.lstrip('/'), connect_timeout=2).close()
-except Exception:
-    sys.exit(1)
-" 2>/dev/null; then
-      break
-    fi
-    sleep 1
-  done
-fi
-echo "Applying database migrations…"
-python /app/manage.py migrate --noinput
-echo "Bootstrapping admin account…"
-python /app/manage.py bootstrap_admin
-
+# Single-user, local-only: no database, no migrations, no admin bootstrap.
+# All session data lives in the browser; the server is stateless.
 exec "$@"

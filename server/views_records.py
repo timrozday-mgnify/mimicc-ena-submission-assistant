@@ -1,26 +1,44 @@
 """Studies, samples, the generic records browser/actions, and reads (browser-bridged).
 
 Reads upload goes DIRECT from the user's machine to ENA via the local helper.
-The server never touches local read files. It only:
-  * suggest  — matches scanned read groups to ENA samples (server-side creds),
-  * plan     — decides which runs to upload vs. skip (ledger + ENA lookup) and
-               hands the browser the webin-cli manifest text for each upload,
-  * result   — records the outcome the browser relays back from the helper.
+The server never touches local read files. It is fully stateless: Webin
+credentials arrive per-request (see ``webin_creds``) and the resume ledger lives
+in the browser. The reads endpoints only:
+  * suggest  — matches scanned read groups to ENA samples,
+  * plan     — decides which runs to upload vs. skip (client ledger + ENA
+               lookup) and hands the browser the webin-cli manifest text,
+  * result   — parses the helper's outcome the browser relays back.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from typing import Any
 
-import auth
-import credentials_store
 import ena_service
 import read_assign
-import session_store
+import webin_creds
 from django.http import HttpRequest, HttpResponseNotAllowed, JsonResponse
 from pydantic import BaseModel, ValidationError
+
+# reads ledger status values (the browser stores these; we only read them).
+STATUS_DONE = "done"
+STATUS_ALREADY_IN_ENA = "already_in_ena"
+
+
+def _slug(text: str) -> str:
+    """Filesystem/alias-safe slug: keep word chars, collapse the rest to '-'."""
+    s = re.sub(r"[^A-Za-z0-9._-]+", "-", str(text).strip()).strip("-")
+    return s or "x"
+
+
+def session_run_alias(session_name: str, run_name: str) -> str:
+    """Stable per-run alias. Session names are unique per user, so this is
+    identical across re-submits — which is what lets us detect a run already in
+    ENA."""
+    return f"{_slug(session_name)}_{_slug(run_name)}"
 
 
 class StudySubmitRequest(BaseModel):
@@ -62,12 +80,12 @@ class SuggestRequest(BaseModel):
 class ReadsPlanRequest(BaseModel):
     runs: list[dict[str, Any]]
     test: bool = True
-    session_id: str | None = None
+    session_name: str | None = None
+    ledger: dict[str, dict[str, Any]] = {}  # run_name -> the browser's resume ledger row
     force_reupload: bool = False
 
 
 class ReadsResultRequest(BaseModel):
-    session_id: str | None = None
     name: str
     alias: str | None = None
     stable_alias: str | None = None
@@ -81,13 +99,6 @@ class ReadsResultRequest(BaseModel):
 
 def _parse(model, request: HttpRequest):
     return model.model_validate(json.loads(request.body))
-
-
-def _require_session(session_id: str, user) -> tuple[dict[str, Any] | None, JsonResponse | None]:
-    session = session_store.get_session(session_id, owner=user)
-    if session is None:
-        return None, JsonResponse({"detail": "Session not found"}, status=404)
-    return session, None
 
 
 def _skip_result(run: dict[str, Any], name: str, alias: str, accs: dict[str, Any], reason: str) -> dict[str, Any]:
@@ -114,10 +125,7 @@ def _skip_result(run: dict[str, Any], name: str, alias: str, accs: dict[str, Any
 def study_submit(request: HttpRequest) -> JsonResponse:
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
-    user, err = auth.current_user(request)
-    if err:
-        return err
-    creds, err = credentials_store.get_creds(user)
+    creds, err = webin_creds.from_request(request)
     if err:
         return err
     try:
@@ -137,10 +145,7 @@ def study_submit(request: HttpRequest) -> JsonResponse:
 def study_list(request: HttpRequest) -> JsonResponse:
     if request.method != "GET":
         return HttpResponseNotAllowed(["GET"])
-    user, err = auth.current_user(request)
-    if err:
-        return err
-    creds, err = credentials_store.get_creds(user)
+    creds, err = webin_creds.from_request(request)
     if err:
         return err
     test = request.GET.get("test", "true").lower() != "false"
@@ -174,10 +179,7 @@ def sample_prepare(request: HttpRequest) -> JsonResponse:
 def sample_submit(request: HttpRequest) -> JsonResponse:
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
-    user, err = auth.current_user(request)
-    if err:
-        return err
-    creds, err = credentials_store.get_creds(user)
+    creds, err = webin_creds.from_request(request)
     if err:
         return err
     try:
@@ -203,10 +205,7 @@ def sample_submit(request: HttpRequest) -> JsonResponse:
 def sample_list(request: HttpRequest) -> JsonResponse:
     if request.method != "GET":
         return HttpResponseNotAllowed(["GET"])
-    user, err = auth.current_user(request)
-    if err:
-        return err
-    creds, err = credentials_store.get_creds(user)
+    creds, err = webin_creds.from_request(request)
     if err:
         return err
     test = request.GET.get("test", "true").lower() != "false"
@@ -225,10 +224,7 @@ def sample_list(request: HttpRequest) -> JsonResponse:
 def records_list(request: HttpRequest, entity: str) -> JsonResponse:
     if request.method != "GET":
         return HttpResponseNotAllowed(["GET"])
-    user, err = auth.current_user(request)
-    if err:
-        return err
-    creds, err = credentials_store.get_creds(user)
+    creds, err = webin_creds.from_request(request)
     if err:
         return err
     test = request.GET.get("test", "true").lower() != "false"
@@ -245,10 +241,7 @@ def records_list(request: HttpRequest, entity: str) -> JsonResponse:
 def records_action(request: HttpRequest) -> JsonResponse:
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
-    user, err = auth.current_user(request)
-    if err:
-        return err
-    creds, err = credentials_store.get_creds(user)
+    creds, err = webin_creds.from_request(request)
     if err:
         return err
     try:
@@ -273,10 +266,7 @@ def records_action(request: HttpRequest) -> JsonResponse:
 def reads_suggest(request: HttpRequest) -> JsonResponse:
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
-    user, err = auth.current_user(request)
-    if err:
-        return err
-    creds, err = credentials_store.get_creds(user)
+    creds, err = webin_creds.from_request(request)
     if err:
         return err
     try:
@@ -294,10 +284,7 @@ def reads_plan(request: HttpRequest) -> JsonResponse:
     """
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
-    user, err = auth.current_user(request)
-    if err:
-        return err
-    creds, err = credentials_store.get_creds(user)
+    creds, err = webin_creds.from_request(request)
     if err:
         return err
     try:
@@ -307,17 +294,13 @@ def reads_plan(request: HttpRequest) -> JsonResponse:
     if not req.runs:
         return JsonResponse({"detail": "No runs provided"}, status=422)
 
-    session = None
-    if req.session_id:
-        session, err = _require_session(req.session_id, user)
-        if err:
-            return err
+    has_session = bool(req.session_name)
     force = req.force_reupload
 
     def stable_alias(run_name: str) -> str | None:
-        if session is None:
+        if not has_session:
             return None  # one-off: manifest uses a timestamped alias, no ledger
-        return session_store.session_run_alias(session["name"], run_name)
+        return session_run_alias(req.session_name, run_name)
 
     # Pre-compute stable aliases + a single ENA lookup for the batch.
     stable_by_name: dict[str, str | None] = {}
@@ -331,7 +314,7 @@ def reads_plan(request: HttpRequest) -> JsonResponse:
 
     existing: dict[str, dict[str, str]] = {}
     warnings: list[str] = []
-    if session is not None and not force and candidate_aliases:
+    if has_session and not force and candidate_aliases:
         try:
             existing = ena_service.lookup_existing_runs(creds, candidate_aliases, test=req.test)
         except Exception as exc:  # noqa: BLE001
@@ -343,26 +326,20 @@ def reads_plan(request: HttpRequest) -> JsonResponse:
         stable = stable_by_name[name]
         run_forced = force or run.get("reupload", False)
 
-        # Resume short-circuits (only with a session + stable alias).
-        if session is not None and stable and not run_forced:
-            ledger = session_store.get_reads_run(req.session_id, name)
+        # Resume short-circuits (only with a session + stable alias). The browser
+        # owns the ledger and sends it in ``req.ledger``; skip rows it relays back
+        # to its own store. ``already_in_ena`` is detected fresh against ENA here.
+        if has_session and stable and not run_forced:
+            ledger = req.ledger.get(name)
             if (
                 ledger
-                and ledger["status"] in (session_store.STATUS_DONE, session_store.STATUS_ALREADY_IN_ENA)
+                and ledger.get("status") in (STATUS_DONE, STATUS_ALREADY_IN_ENA)
                 and (ledger.get("run_accession") or ledger.get("experiment_accession"))
             ):
                 plan.append({**_skip_result(run, name, stable, ledger, "cached"), "action": "skip"})
                 continue
             if stable in existing:
                 accs = existing[stable]
-                session_store.upsert_reads_run(
-                    req.session_id,
-                    name,
-                    stable,
-                    session_store.STATUS_ALREADY_IN_ENA,
-                    experiment_accession=accs.get("experiment_accession") or None,
-                    run_accession=accs.get("run_accession") or None,
-                )
                 plan.append({**_skip_result(run, name, stable, accs, "already_in_ena"), "action": "skip"})
                 continue
 
@@ -403,22 +380,14 @@ def reads_plan(request: HttpRequest) -> JsonResponse:
 
 
 def reads_result(request: HttpRequest) -> JsonResponse:
-    """Record the outcome of a helper-run upload and update the ledger/log."""
+    """Parse the helper-run upload outcome the browser relays back. Stateless:
+    the browser persists the ledger row + log itself (see reads.js)."""
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
-    user, err = auth.current_user(request)
-    if err:
-        return err
     try:
         req = _parse(ReadsResultRequest, request)
     except (ValidationError, json.JSONDecodeError) as exc:
         return JsonResponse({"detail": str(exc)}, status=422)
-
-    session = None
-    if req.session_id:
-        session, err = _require_session(req.session_id, user)
-        if err:
-            return err
 
     accs = read_assign.parse_accessions(req.log.splitlines()) if req.log else {}
     if req.experiment_accession:
@@ -436,18 +405,4 @@ def reads_result(request: HttpRequest) -> JsonResponse:
         "skipped": False,
         **accs,
     }
-
-    if session is not None:
-        if req.log:
-            session_store.append_reads_log(req.session_id, req.log.rstrip("\n"))
-        stable = req.stable_alias or session_store.session_run_alias(session["name"], req.name)
-        session_store.upsert_reads_run(
-            req.session_id,
-            req.name,
-            stable,
-            session_store.STATUS_DONE if req.exit_code == 0 else session_store.STATUS_FAILED,
-            experiment_accession=accs.get("experiment_accession"),
-            run_accession=accs.get("run_accession"),
-            submitted_alias=req.alias,
-        )
     return JsonResponse({"result": result})

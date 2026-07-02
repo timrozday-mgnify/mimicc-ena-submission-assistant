@@ -63,7 +63,7 @@ COPY schemas/ schemas/
 COPY assets/ena_schema/ assets/ena_schema/
 # App code
 COPY server/ server/
-# Django ORM management entrypoint (migrations).
+# Django management entrypoint (e.g. `manage.py runserver` for local dev).
 COPY manage.py manage.py
 # Built DataHarmonizer bundle (see dh-builder stage above), staged separately
 # from server/static/dh/ — that's a host bind mount (see docker-compose.yml)
