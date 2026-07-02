@@ -39,6 +39,7 @@ tasks:
   start:read-helper-app:
     desc: Start the read-helper-app Electron companion (../read-helper-app)
     dir: ../read-helper-app
+    dotenv: ["{{.ROOT_DIR}}/.env"]
     cmds:
       - npm run dev
 

@@ -196,6 +196,11 @@ async function initDhFrames() {
   if (registry.mimicc) {
     pointDhFrameAtTemplate("sample", `mimicc/${registry.mimicc}`);
   }
+  if (registry.study) {
+    pointDhFrameAtTemplate("study", `study/${registry.study}`);
+  } else {
+    $("studyDhMissing").style.display = "block";
+  }
   if (registry.mimicc_experiment) {
     EXP_TEMPLATE_PATH = `mimicc_experiment/${registry.mimicc_experiment}`;
     pointDhFrameAtTemplate("experiment", EXP_TEMPLATE_PATH);

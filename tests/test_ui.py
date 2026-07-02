@@ -81,6 +81,12 @@ def test_maximize_controls_for_reads_and_dataharmonizer(page):
     page.click("#readsAssignPanel button[aria-label='Minimize panel']")
     assert "maximized" not in page.get_attribute("#readsAssignPanel", "class")
 
+    page.click("nav button:has-text('Studies')")
+    page.click("#studyDhPanel button[aria-label='Maximize panel']")
+    assert "maximized" in page.get_attribute("#studyDhPanel", "class")
+    page.click("#studyDhPanel button[aria-label='Minimize panel']")
+    assert "maximized" not in page.get_attribute("#studyDhPanel", "class")
+
     page.click("nav button:has-text('Samples')")
     page.click("#dhPanel button[aria-label='Maximize panel']")
     assert "maximized" in page.get_attribute("#dhPanel", "class")
