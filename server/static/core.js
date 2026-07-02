@@ -16,26 +16,24 @@ const $ = (id) => document.getElementById(id);
 let HELPER_BASE = "";       // base URL of the local reads upload helper, e.g. http://localhost:9100
 let HELPER_OK = false;      // whether the helper is currently reachable
 
-// Echoes Django's csrftoken cookie back as a header, satisfying CsrfViewMiddleware
-// in hosted mode; a cross-site request cannot read this same-origin cookie.
-function csrfHeaders() {
-  const m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/);
-  return m ? { "X-CSRFToken": decodeURIComponent(m[1]) } : {};
+// Webin (ENA) credentials live in the browser for this tab only (sessionStorage,
+// see credentials.js) and ride along on every API call as headers — the
+// stateless local backend reads them per-request (server/webin_creds.py).
+let CREDS = { username: "", password: "" };
+function webinHeaders() {
+  return CREDS.username && CREDS.password
+    ? { "X-Webin-Username": CREDS.username, "X-Webin-Password": CREDS.password }
+    : {};
 }
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...csrfHeaders() },
-    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", ...webinHeaders() },
     ...opts,
   });
   const text = await res.text();
   let body;
   try { body = text ? JSON.parse(text) : {}; } catch { body = { detail: text }; }
-  if (res.status === 401 && HEALTH && HEALTH.deployment_mode === "hosted" && !path.startsWith("/api/auth/")) {
-    // Session expired / not signed in — surface the login overlay.
-    $("loginModal").classList.add("show");
-  }
   if (!res.ok) throw new Error(body.detail || `HTTP ${res.status}`);
   return body;
 }
@@ -133,7 +131,6 @@ document.querySelectorAll("nav button").forEach((b) => {
     document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
     b.classList.add("active");
     $("tab-" + b.dataset.tab).classList.add("active");
-    if (b.dataset.tab === "admin") loadUsers();
   };
 });
 

@@ -1,6 +1,105 @@
 "use strict";
 
 // ---------------------------------------------------------------------------
+// Session store — IndexedDB (single-user, local-only; no backend). One record
+// per named session holds the full UI snapshot, both DataHarmonizer exports,
+// and the reads resume ledger. Mirrors the shape the old /api/sessions
+// endpoints returned so the rest of this file is unchanged.
+// ---------------------------------------------------------------------------
+const DB_NAME = "mimicc";
+const DB_STORE = "sessions";
+let _dbPromise = null;
+
+function idbOpen() {
+  if (_dbPromise) return _dbPromise;
+  _dbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE, { keyPath: "id" });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return _dbPromise;
+}
+function idbReq(request) {
+  return new Promise((res, rej) => { request.onsuccess = () => res(request.result); request.onerror = () => rej(request.error); });
+}
+async function idbGet(id) {
+  const db = await idbOpen();
+  return idbReq(db.transaction(DB_STORE, "readonly").objectStore(DB_STORE).get(id));
+}
+async function idbAll() {
+  const db = await idbOpen();
+  return idbReq(db.transaction(DB_STORE, "readonly").objectStore(DB_STORE).getAll());
+}
+async function idbPut(record) {
+  const db = await idbOpen();
+  const tx = db.transaction(DB_STORE, "readwrite");
+  tx.objectStore(DB_STORE).put(record);
+  return new Promise((res, rej) => { tx.oncomplete = () => res(record); tx.onerror = () => rej(tx.error); });
+}
+async function idbDelete(id) {
+  const db = await idbOpen();
+  const tx = db.transaction(DB_STORE, "readwrite");
+  tx.objectStore(DB_STORE).delete(id);
+  return new Promise((res, rej) => { tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); });
+}
+
+function newSessionId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function sessionMeta(r) { return { id: r.id, name: r.name, test_env: !!r.test_env, created_at: r.created_at, updated_at: r.updated_at }; }
+
+async function dbListSessions() {
+  const all = await idbAll();
+  return all.map(sessionMeta).sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
+}
+async function dbCreateSession(name, testEnv) {
+  name = (name || "").trim();
+  if (!name) throw new Error("Session name is required");
+  const all = await idbAll();
+  if (all.some((r) => r.name === name)) throw new Error(`A session named "${name}" already exists`);
+  const now = new Date().toISOString();
+  const rec = {
+    id: newSessionId(), name, test_env: !!testEnv, created_at: now, updated_at: now,
+    state: null, state_saved_at: null,
+    dh_export_sample: null, dh_export_sample_saved_at: null,
+    dh_export_experiment: null, dh_export_experiment_saved_at: null,
+    reads_runs: {},
+  };
+  await idbPut(rec);
+  return sessionMeta(rec);
+}
+async function dbGetSession(id) {
+  const r = await idbGet(id);
+  if (!r) throw new Error("Session not found");
+  return {
+    session: sessionMeta(r),
+    state: r.state,
+    dh_export: r.dh_export_sample, dh_saved_at: r.dh_export_sample_saved_at,
+    exp_dh_export: r.dh_export_experiment, exp_dh_saved_at: r.dh_export_experiment_saved_at,
+    reads_runs: r.reads_runs || {},
+  };
+}
+async function dbSaveState(id, state, testEnv, readsRuns) {
+  const r = await idbGet(id);
+  if (!r) throw new Error("Session not found");
+  const now = new Date().toISOString();
+  Object.assign(r, { state, state_saved_at: now, updated_at: now, test_env: !!testEnv, reads_runs: readsRuns || {} });
+  await idbPut(r);
+  return now;
+}
+async function dbSaveDhExport(id, kind, exportJson) {
+  const r = await idbGet(id);
+  if (!r) throw new Error("Session not found");
+  const now = new Date().toISOString();
+  const field = kind === "experiment" ? "dh_export_experiment" : "dh_export_sample";
+  r[field] = exportJson; r[field + "_saved_at"] = now; r.updated_at = now;
+  await idbPut(r);
+  return now;
+}
+
+// ---------------------------------------------------------------------------
 // Submission sessions (named, persisted; restore-all on open)
 // ---------------------------------------------------------------------------
 let saveTimer = null;
@@ -21,7 +120,7 @@ function setSessionSaved(isoTs) {
 async function loadSessionList() {
   const el = $("sessionList");
   try {
-    const sessions = await api("/api/sessions");
+    const sessions = await dbListSessions();
     if (!sessions.length) { el.innerHTML = '<p class="muted" style="padding:10px">No sessions yet — create one below.</p>'; return; }
     el.innerHTML = "";
     sessions.forEach((s) => {
@@ -36,7 +135,7 @@ async function loadSessionList() {
       open.onclick = () => openSession(s.id);
       const del = document.createElement("button");
       del.className = "icon-btn danger"; del.textContent = "×"; del.title = "Delete session";
-      del.onclick = async () => { if (confirm(`Delete session "${s.name}"? This removes its saved data.`)) { await api(`/api/sessions/${s.id}`, { method: "DELETE" }); loadSessionList(); } };
+      del.onclick = async () => { if (confirm(`Delete session "${s.name}"? This removes its saved data.`)) { await idbDelete(s.id); loadSessionList(); } };
       actions.append(open, del);
       row.append(left, actions);
       el.appendChild(row);
@@ -48,7 +147,7 @@ async function createSession() {
   const name = $("newSessionName").value.trim();
   if (!name) { banner("sessionBanner", false, "Enter a session name."); return; }
   try {
-    const s = await api("/api/sessions", { method: "POST", body: JSON.stringify({ name, test_env: TEST }) });
+    const s = await dbCreateSession(name, TEST);
     $("newSessionName").value = "";
     await openSession(s.id);
   } catch (e) { banner("sessionBanner", false, e.message); }
@@ -56,13 +155,13 @@ async function createSession() {
 
 async function openSession(id) {
   try {
-    const data = await api(`/api/sessions/${id}`);
+    const data = await dbGetSession(id);
     SESSION = data.session;
-    READS_RUNS = {};
-    (data.reads_runs || []).forEach((r) => { READS_RUNS[r.run_name] = r; });
     setSessionChip();
     closeSessionModal();
-    await applyState(data);
+    await applyState(data);                 // resetToBlank() clears READS_RUNS…
+    READS_RUNS = data.reads_runs || {};     // …so restore the resume ledger after.
+    renderRunTable();
     setSessionSaved(data.session.updated_at);
   } catch (e) { banner("sessionBanner", false, e.message); }
 }
@@ -199,12 +298,54 @@ async function saveSessionNow() {
   if (!SESSION) return;
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
   try {
-    const r = await api(`/api/sessions/${SESSION.id}/state`, {
-      method: "PUT",
-      body: JSON.stringify({ state: collectState(), test_env: TEST }),
-    });
-    setSessionSaved(r.saved_at);
+    const savedAt = await dbSaveState(SESSION.id, collectState(), TEST, READS_RUNS);
+    setSessionSaved(savedAt);
   } catch { /* transient; next change retries */ }
+}
+
+// ---------------------------------------------------------------------------
+// Backup: download / import a whole session as JSON. The browser profile is
+// now the only copy of session data, so this is the durability the DB used to
+// provide — and makes sessions portable between machines.
+// ---------------------------------------------------------------------------
+async function downloadSession() {
+  if (!SESSION) { banner("sessionBanner", false, "Open a session first."); return; }
+  await saveSessionNow();
+  const rec = await idbGet(SESSION.id);
+  const blob = new Blob([JSON.stringify(rec, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${String(rec.name).replace(/[^A-Za-z0-9._-]+/g, "-")}.session.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+function importSession() {
+  const f = $("sessionImportFile").files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const rec = JSON.parse(reader.result);
+      if (!rec || !rec.name) throw new Error("Not a valid session file.");
+      const all = await idbAll();
+      // Fresh id, and de-duplicate the name so an import never clobbers an
+      // existing session.
+      rec.id = newSessionId();
+      let name = rec.name, n = 2;
+      while (all.some((r) => r.name === name)) { name = `${rec.name} (${n++})`; }
+      rec.name = name;
+      rec.updated_at = new Date().toISOString();
+      rec.reads_runs = rec.reads_runs || {};
+      await idbPut(rec);
+      $("sessionImportFile").value = "";
+      banner("sessionBanner", true, `Imported session "${rec.name}".`);
+      loadSessionList();
+    } catch (e) { banner("sessionBanner", false, e.message); }
+  };
+  reader.readAsText(f);
 }
 
 // Persist field edits (text inputs, selects, checkboxes) as the user types.

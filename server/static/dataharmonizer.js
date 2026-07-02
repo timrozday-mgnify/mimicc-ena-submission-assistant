@@ -33,9 +33,9 @@ function setExpDhSavedIndicator(isoTs) {
 async function saveDhExport(exportJson, { silent = false } = {}) {
   if (!SESSION) { if (!silent) banner("prepBanner", false, "Open a session first."); return; }
   try {
-    const r = await api(`/api/sessions/${SESSION.id}/dh-export/sample`, { method: "POST", body: JSON.stringify({ export: exportJson }) });
+    const savedAt = await dbSaveDhExport(SESSION.id, "sample", exportJson);
     $("dhExport").value = JSON.stringify(exportJson);
-    setDhSavedIndicator(r.saved_at);
+    setDhSavedIndicator(savedAt);
     scheduleSave();
     if (!silent) banner("prepBanner", true, "Exported from DataHarmonizer.");
   } catch (e) {
@@ -223,8 +223,8 @@ async function checkExpSchemaColumns() {
 async function saveExpDhExport(exportJson, { silent = false } = {}) {
   if (!SESSION) { if (!silent) banner("readsBanner", false, "Open a session first."); return; }
   try {
-    const r = await api(`/api/sessions/${SESSION.id}/dh-export/experiment`, { method: "POST", body: JSON.stringify({ export: exportJson }) });
-    setExpDhSavedIndicator(r.saved_at);
+    const savedAt = await dbSaveDhExport(SESSION.id, "experiment", exportJson);
+    setExpDhSavedIndicator(savedAt);
     scheduleSave();
     if (!silent) banner("readsBanner", true, "Saved experiment metadata.");
   } catch (e) {

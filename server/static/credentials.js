@@ -1,43 +1,54 @@
 "use strict";
 
 // ---------------------------------------------------------------------------
-// Credentials
+// Credentials — held in the browser for this tab only (sessionStorage), never
+// persisted to disk and never sent to a server store; api() attaches them as
+// headers on each request (see core.js webinHeaders).
 // ---------------------------------------------------------------------------
-async function saveCreds() {
-  const username = $("username").value, password = $("password").value;
+const CREDS_KEY = "MIMICC_WEBIN_CREDS";
+
+function credsConfigured() { return !!(CREDS.username && CREDS.password); }
+
+function restoreCreds() {
   try {
-    await api("/api/credentials", { method: "POST", body: JSON.stringify({ username, password, test: TEST }) });
-    // Also hand the credentials to the local helper so it can upload reads
-    // (the helper holds them in memory only). Best-effort — reads can be
-    // re-credentialed later if the helper isn't up yet.
-    if (HELPER_OK) { try { await pushCredsToHelper(username, password); } catch (_) {} }
-    $("password").value = "";
-    banner("credBanner", true, `Credentials validated and saved for ${TEST ? "TEST" : "PRODUCTION"} (memory only).`);
-    refreshHealth();
-  } catch (e) { banner("credBanner", false, e.message); }
+    const raw = sessionStorage.getItem(CREDS_KEY);
+    if (raw) CREDS = JSON.parse(raw);
+  } catch (_) { CREDS = { username: "", password: "" }; }
+  reflectCredStatus();
+}
+
+function reflectCredStatus() {
+  const s = $("credStatus");
+  if (!s) return;
+  s.textContent = "credentials: " + (credsConfigured() ? "set" : "not set");
+  s.className = "creds-status " + (credsConfigured() ? "on" : "");
+}
+
+async function saveCreds() {
+  const username = $("username").value.trim(), password = $("password").value;
+  if (!username || !password) { banner("credBanner", false, "Enter a Webin username and password."); return; }
+  CREDS = { username, password };
+  sessionStorage.setItem(CREDS_KEY, JSON.stringify(CREDS));
+  // Also hand the credentials to the local helper so it can upload reads
+  // (the helper holds them in memory only). Best-effort.
+  if (HELPER_OK) { try { await pushCredsToHelper(username, password); } catch (_) {} }
+  $("password").value = "";
+  reflectCredStatus();
+  banner("credBanner", true, `Credentials saved for ${TEST ? "TEST" : "PRODUCTION"} (this browser tab only). Validated on first submission.`);
 }
 async function clearCreds() {
-  await api("/api/credentials", { method: "DELETE" });
+  CREDS = { username: "", password: "" };
+  sessionStorage.removeItem(CREDS_KEY);
   if (HELPER_OK) { try { await helperApi("/api/credentials", { method: "DELETE" }); } catch (_) {} }
+  reflectCredStatus();
   banner("credBanner", true, "Credentials cleared.");
-  refreshHealth();
 }
 async function pushCredsToHelper(username, password) {
   await helperApi("/api/credentials", { method: "POST", body: JSON.stringify({ username, password }) });
 }
 async function refreshHealth() {
   HEALTH = await api("/api/health");
-  const s = $("credStatus");
-  s.textContent = "credentials: " + (HEALTH.credentials_configured ? "set" : "not set");
-  s.className = "creds-status " + (HEALTH.credentials_configured ? "on" : "");
-  // Account UI: show the signed-in user + admin tab.
-  if (HEALTH.username) {
-    $("userBox").style.display = "inline-flex";
-    $("userName").textContent = HEALTH.username + (HEALTH.is_admin ? " (admin)" : "");
-    // Hide the explicit Log out button in local single-user mode.
-    $("logoutBtn").style.display = HEALTH.deployment_mode === "hosted" ? "inline-block" : "none";
-  }
-  $("adminTabBtn").style.display = HEALTH.is_admin ? "inline-block" : "none";
+  reflectCredStatus();
   // Seed the default sample filter only when empty (don't clobber a restored
   // session value).
   if (!$("sampleFilter").value) $("sampleFilter").value = HEALTH.default_sample_filter || "";

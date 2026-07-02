@@ -25,15 +25,11 @@ prefersLight.addEventListener("change", () => {
 // Init
 // ---------------------------------------------------------------------------
 async function init() {
-  HEALTH = await api("/api/health");
-  if (HEALTH.deployment_mode === "hosted" && !HEALTH.authenticated) {
-    $("loginModal").classList.add("show");  // gate on login; startApp() runs after doLogin()
-    return;
-  }
   await startApp();
 }
 
 async function startApp() {
+  restoreCreds();            // pull Webin creds saved for this browser tab (if any)
   await refreshHealth();
   captureInitialDefaults();  // pristine blank-slate snapshot, used to reset between sessions
   initDhFrames();            // point both DH iframes at explicit ?template= paths

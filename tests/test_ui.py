@@ -57,9 +57,12 @@ def test_tab_switching(page):
 
 
 def test_credentials_indicator(page):
-    # live_server pre-sets credentials, so health reports them configured.
-    page.reload()
-    page.wait_for_timeout(300)
+    # Credentials are entered in the browser (held for this tab only); saving
+    # them flips the indicator to "set".
+    page.fill("#username", "Webin-test")
+    page.fill("#password", "secret")
+    page.click("#tab-creds button:has-text('Save')")
+    page.wait_for_timeout(100)
     assert "set" in page.inner_text("#credStatus")
 
 
@@ -93,15 +96,7 @@ def test_maximize_controls_for_reads_and_dataharmonizer(page):
 
 def test_reads_sample_assignment_and_row_delete(page):
     page.click("nav button:has-text('Reads')")
-    page.evaluate(
-        """async () => {
-            await fetch('/api/credentials', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({username: 'Webin-test', password: 'secret'})
-            });
-        }"""
-    )
+    page.evaluate("() => { CREDS = { username: 'Webin-test', password: 'secret' }; }")
     page.click("button:has-text('Load samples')")
     page.wait_for_selector("#readSampleList .sample-item")
     assert "0 files" in page.inner_text("#readSampleList")
@@ -136,15 +131,7 @@ def test_reads_sample_assignment_and_row_delete(page):
 
 
 def test_records_runs_and_experiments_views(page):
-    page.evaluate(
-        """async () => {
-            await fetch('/api/credentials', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({username: 'Webin-test', password: 'secret'})
-            });
-        }"""
-    )
+    page.evaluate("() => { CREDS = { username: 'Webin-test', password: 'secret' }; }")
     page.click("nav button:has-text('Records')")
 
     page.select_option("#recEntity", "runs")

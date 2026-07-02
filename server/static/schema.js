@@ -140,7 +140,7 @@ async function buildImportedSchema() {
   const name = $("schemaImportName").value.trim();
   if (name) form.append("name", name);
   try {
-    const res = await fetch("/api/schemas/import", { method: "POST", body: form, headers: csrfHeaders(), credentials: "same-origin" });
+    const res = await fetch("/api/schemas/import", { method: "POST", body: form });
     const body = await res.json();
     if (!res.ok) throw new Error(body.detail || `HTTP ${res.status}`);
     $("schemaSaveName").value = name || "";
@@ -154,7 +154,7 @@ function importSchemaFile() {
   if (!f) return;
   const form = new FormData();
   form.append("file", f);
-  fetch("/api/schemas/import-file", { method: "POST", body: form, headers: csrfHeaders(), credentials: "same-origin" })
+  fetch("/api/schemas/import-file", { method: "POST", body: form })
     .then(async (res) => {
       const body = await res.json();
       if (!res.ok) throw new Error(body.detail || `HTTP ${res.status}`);

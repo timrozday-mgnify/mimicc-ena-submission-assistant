@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Django management entrypoint for ORM migrations (makemigrations/migrate)."""
+"""Django management entrypoint (e.g. `manage.py runserver` for local dev)."""
 
 import os
 import sys

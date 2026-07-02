@@ -1,16 +1,11 @@
 """Shared pytest fixtures.
 
-API tests drive Django views in-process via a thin async-compatible wrapper
-around ``django.test.Client`` (no Docker, no network, no real event loop —
-Django's test client dispatches synchronously, the ``async def``/``await``
-shape in test files is kept only so the bulk of test bodies didn't need
-rewriting). UI tests drive a real WSGI server with Playwright. Reads upload
-now happens via a local helper, so it is exercised at the plan/result API
-level rather than by running webin-cli.
-
-The Django ORM is pointed at a throwaway SQLite database (configured before
-any app module is imported); ``DEPLOYMENT_MODE=local`` makes every request
-auto-authenticate as the admin user, matching the single-user local experience.
+Single-user, local-only: no database, no accounts, no server-side state. API
+tests drive Django views in-process via a thin async-compatible wrapper around
+``django.test.Client``. Webin credentials are supplied per-request as headers
+(see ``server/webin_creds.py``); the ``with_creds`` fixture injects them into the
+test client. UI tests drive a real WSGI server with Playwright; the browser
+holds credentials itself.
 """
 
 from __future__ import annotations
@@ -18,7 +13,6 @@ from __future__ import annotations
 import json as _json
 import os
 import sys
-import tempfile
 import threading
 import time
 from pathlib import Path
@@ -31,28 +25,18 @@ _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO / "server"))
 sys.path.insert(0, str(_REPO))
 
-# Configure the ORM to use a throwaway SQLite DB BEFORE importing app modules.
-_DB_FD, _DB_PATH = tempfile.mkstemp(suffix=".sqlite3", prefix="mimicc-test-")
-os.close(_DB_FD)
-os.environ["SQLITE_PATH"] = _DB_PATH
-os.environ.setdefault("DEPLOYMENT_MODE", "local")
-# Test bodies stay ``async def`` (see AsyncClient below) purely so they didn't
-# need rewriting, but Django's test client/ORM underneath run synchronously
-# inside that event loop; allow it (single throwaway SQLite DB, low concurrency).
-os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 
-import dbsetup  # noqa: E402
+import django  # noqa: E402
 
-dbsetup.migrate()
+django.setup()
 
-import auth as _auth  # noqa: E402
-
-_auth.bootstrap_admin()
-
-import credentials_store  # noqa: E402
 import ena_service  # noqa: E402
-from django.core.cache import cache as _cache  # noqa: E402
 from django.test import Client as _DjangoClient  # noqa: E402
+
+# Test creds, attached as headers by the with_creds fixture (the stateless
+# backend only checks they're present; ena_service is mocked in tests).
+_TEST_CREDS_HEADERS = {"X-Webin-Username": "Webin-test", "X-Webin-Password": "secret"}
 
 
 class AsyncClient:
@@ -125,30 +109,10 @@ def client():
     return AsyncClient()
 
 
-@pytest.fixture(autouse=True)
-def clean_state():
-    """Reset cache + per-user DB rows around every test."""
-    from django.contrib.auth.models import User
-    from django.contrib.sessions.models import Session
-    from orm import models
-
-    def _wipe():
-        _cache.clear()
-        models.ReadsRun.objects.all().delete()
-        models.SubmissionSession.objects.all().delete()
-        Session.objects.all().delete()
-        User.objects.exclude(username=_auth.admin_username()).delete()
-
-    _wipe()
-    yield
-    _wipe()
-
-
 @pytest.fixture
-def with_creds():
-    """Configure Webin credentials for the (auto-logged-in) admin user."""
-    admin = _auth.get_admin_user()
-    credentials_store.set_creds(admin.id, "Webin-test", "secret")
+def with_creds(client):
+    """Attach Webin credential headers to the test client for the request."""
+    client._headers.update(_TEST_CREDS_HEADERS)
     return ("Webin-test", "secret")
 
 
@@ -173,9 +137,6 @@ MOCK_READS_LOG = (
 @pytest.fixture(scope="session")
 def live_server_url():
     import config.wsgi as wsgi_module
-
-    admin = _auth.get_admin_user()
-    credentials_store.set_creds(admin.id, "Webin-test", "secret")
 
     original_list_records = ena_service.list_records
     original_validate_credentials = ena_service.validate_credentials

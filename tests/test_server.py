@@ -6,7 +6,7 @@ import conftest
 import ena_service
 
 # ---------------------------------------------------------------------------
-# Health + credentials
+# Health
 # ---------------------------------------------------------------------------
 
 
@@ -15,48 +15,11 @@ async def test_health(client):
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
-    assert body["credentials_configured"] is False
     assert "library_presets" not in body
 
 
-async def test_set_and_clear_credentials(client, monkeypatch):
-    seen = {}
-
-    def validate(creds, *, test):
-        seen["username"] = creds.username
-        seen["password"] = creds.password
-        seen["test"] = test
-
-    monkeypatch.setattr(ena_service, "validate_credentials", validate)
-    r = await client.post("/api/credentials", json={"username": "Webin-9", "password": "pw"})
-    assert r.status_code == 200
-    assert r.json()["environment"] == "test"
-    assert seen == {"username": "Webin-9", "password": "pw", "test": True}
-    assert (await client.get("/api/health")).json()["credentials_configured"] is True
-
-    r = await client.delete("/api/credentials")
-    assert r.status_code == 200
-    assert (await client.get("/api/health")).json()["credentials_configured"] is False
-
-
-async def test_set_credentials_rejects_invalid_webin_login(client, monkeypatch):
-    def reject(*a, **k):
-        raise PermissionError("bad login")
-
-    monkeypatch.setattr(ena_service, "validate_credentials", reject)
-    r = await client.post("/api/credentials", json={"username": "Webin-9", "password": "wrong", "test": False})
-    assert r.status_code == 401
-    assert "production" in r.json()["detail"]
-    assert (await client.get("/api/health")).json()["credentials_configured"] is False
-
-
-async def test_credentials_require_fields(client):
-    r = await client.post("/api/credentials", json={"username": "", "password": "pw"})
-    assert r.status_code == 422
-
-
 # ---------------------------------------------------------------------------
-# Auth gating
+# Credential gating (creds arrive as headers; absent => 401)
 # ---------------------------------------------------------------------------
 
 

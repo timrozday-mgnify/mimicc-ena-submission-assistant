@@ -3,14 +3,9 @@ name = "mimicc-ena-submission-assistant"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-    # Web app
+    # Web app (single-user, local-only: no database, auth, or cache)
     "Django>=5,<6",
-    "django-cors-headers",
     "gunicorn",
-    "redis",
-
-    # Multi-user database + auth + Postgres
-    "psycopg[binary]",
 
     # ena-api-client, ena-submission-toolkit, and standalone linkml-lib dependencies
     "httpx",

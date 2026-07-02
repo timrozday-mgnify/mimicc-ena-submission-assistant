@@ -12,11 +12,8 @@ from __future__ import annotations
 import os
 import pathlib
 
-import auth
-import credentials_store
 import ena_service
 from django.http import FileResponse, HttpRequest, JsonResponse
-from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.static import serve as static_serve
 
 STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
@@ -32,7 +29,6 @@ _HELPER_PORT = int(os.environ.get("HELPER_PORT", "9100"))
 _DHTB_URL = os.environ.get("DHTB_URL", "http://localhost:8765")
 
 
-@ensure_csrf_cookie
 def index(request: HttpRequest) -> FileResponse:
     return FileResponse((STATIC_DIR / "index.html").open("rb"))
 
@@ -62,19 +58,9 @@ def serve_dh(request: HttpRequest, path: str = "") -> FileResponse:
 
 
 def health(request: HttpRequest) -> JsonResponse:
-    if auth.is_local():
-        user = auth.get_admin_user()
-    else:
-        user = request.user if request.user.is_authenticated else None
-    creds_set = user is not None and credentials_store.has_creds(user.id)
     return JsonResponse(
         {
             "status": "ok",
-            "deployment_mode": auth.deployment_mode(),
-            "authenticated": user is not None,
-            "username": getattr(user, "username", None),
-            "is_admin": bool(getattr(user, "is_superuser", False)),
-            "credentials_configured": creds_set,
             "helper_port": _HELPER_PORT,
             "dh_available": any(DH_DIR.iterdir()),
             "default_sample_filter": ena_service.DEFAULT_SAMPLE_FILTER,
