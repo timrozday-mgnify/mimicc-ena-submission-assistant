@@ -17,6 +17,7 @@ async function refreshSchemaList() {
   renderSchemaLibrary();
   populateSchemaSelect("sampleSchemaSelect");
   populateSchemaSelect("expSchemaSelect");
+  populateSchemaSelect("studySchemaSelect");
   populateSchemaMultiSelect("schemaImportExisting");
 }
 
@@ -58,16 +59,21 @@ function renderSchemaLibrary() {
   el.innerHTML = h + "</tbody></table>";
 }
 
+function _roleMeta(role) {
+  if (role === "sample") return { selectId: "sampleSchemaSelect", bannerId: "prepBanner" };
+  if (role === "study")  return { selectId: "studySchemaSelect",  bannerId: "studyBanner" };
+  return { selectId: "expSchemaSelect", bannerId: "readsBanner" };
+}
+
 async function applySchemaSelection(role) {
-  const selectId = role === "sample" ? "sampleSchemaSelect" : "expSchemaSelect";
-  const bannerId = role === "sample" ? "prepBanner" : "readsBanner";
+  const { selectId, bannerId } = _roleMeta(role);
   const schemaId = $(selectId).value;
   if (!schemaId) { banner(bannerId, false, "No schema selected."); return; }
   await selectSchemaById(role, schemaId, bannerId);
 }
 
 async function selectSchemaById(role, schemaId, bannerId) {
-  const fallbackBanner = bannerId || (role === "sample" ? "prepBanner" : "readsBanner");
+  const fallbackBanner = bannerId || _roleMeta(role).bannerId;
   try {
     const result = await api("/api/schemas/select", { method: "POST", body: JSON.stringify({ role, schema_id: schemaId }) });
     console.info("DataHarmonizer schema selection", result);

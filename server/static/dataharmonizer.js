@@ -7,6 +7,7 @@
 const DH_AUTOSAVE_INTERVAL_MS = 30000;
 let dhAutosaveTimer = null;
 let expDhAutosaveTimer = null;
+let studyDhAutosaveTimer = null;
 
 // Each DataHarmonizer iframe is same-origin, so its window.dataHarmonizer
 // hook (added to the DataHarmonizer fork — see web/index.js there) is
@@ -18,6 +19,7 @@ function dataHarmonizerApi(frameId) {
 }
 function dhApi() { return dataHarmonizerApi("dhFrame"); }
 function expDhApi() { return dataHarmonizerApi("expDhFrame"); }
+function studyDhApi() { return dataHarmonizerApi("studyDhFrame"); }
 
 function formatSavedAt(isoTs) {
   return isoTs ? new Date(isoTs).toLocaleTimeString() : "never";
@@ -28,6 +30,9 @@ function setDhSavedIndicator(isoTs) {
 }
 function setExpDhSavedIndicator(isoTs) {
   $("expDhSavedIndicator").textContent = "Last saved: " + formatSavedAt(isoTs);
+}
+function setStudyDhSavedIndicator(isoTs) {
+  $("studyDhSavedIndicator").textContent = "Last saved: " + formatSavedAt(isoTs);
 }
 
 async function saveDhExport(exportJson, { silent = false } = {}) {
@@ -107,6 +112,9 @@ const DH_FRAME_READY_TIMEOUT_MS = 20000;
 function dhRoleConfig(role) {
   if (role === "sample") {
     return { frameId: "dhFrame", missingId: "dhMissing", bannerId: "prepBanner" };
+  }
+  if (role === "study") {
+    return { frameId: "studyDhFrame", missingId: "studyDhMissing", bannerId: "studyBanner" };
   }
   return { frameId: "expDhFrame", missingId: "expDhMissing", bannerId: "readsBanner" };
 }
@@ -269,11 +277,67 @@ $("expDhFrame").addEventListener("load", () => propagateThemeToFrames(currentEff
 $("expDhFrame").addEventListener("load", () => stabilizeDataHarmonizerFrameRows("expDhFrame"));
 $("expDhFrame").addEventListener("load", markDhFrameLoaded);
 
+async function saveStudyDhExport(exportJson, { silent = false } = {}) {
+  if (!SESSION) { if (!silent) banner("studyBanner", false, "Open a session first."); return; }
+  try {
+    const savedAt = await dbSaveDhExport(SESSION.id, "study", exportJson);
+    setStudyDhSavedIndicator(savedAt);
+    scheduleSave();
+    if (!silent) banner("studyBanner", true, "Saved study metadata.");
+  } catch (e) {
+    if (!silent) banner("studyBanner", false, e.message);
+  }
+}
+
+function exportStudyDhNow() {
+  const dh = studyDhApi();
+  if (!dh) { banner("studyBanner", false, "Study DataHarmonizer isn't ready yet."); return; }
+  saveStudyDhExport(dh.getExportJson());
+}
+
+function autosaveStudyDhExport() {
+  const dh = studyDhApi();
+  if (!dh || !SESSION) return;
+  saveStudyDhExport(dh.getExportJson(), { silent: true });
+}
+
+function loadStudyDhGridWhenReady(exportObj) {
+  if (!exportObj) return;
+  const poll = setInterval(() => {
+    const dh = studyDhApi();
+    if (!dh || !dh.loadExportJson) return;
+    clearInterval(poll);
+    try { dh.loadExportJson(exportObj); } catch { /* schema mismatch — leave grid empty */ }
+  }, 500);
+  setTimeout(() => clearInterval(poll), 15000);
+}
+
+function startStudyDhAutosave() {
+  const poll = setInterval(() => {
+    if (!studyDhApi()) return;
+    clearInterval(poll);
+    if (studyDhAutosaveTimer) clearInterval(studyDhAutosaveTimer);
+    studyDhAutosaveTimer = setInterval(autosaveStudyDhExport, DH_AUTOSAVE_INTERVAL_MS);
+  }, 500);
+}
+$("studyDhFrame").addEventListener("load", startStudyDhAutosave);
+$("studyDhFrame").addEventListener("load", () => propagateThemeToFrames(currentEffectiveTheme()));
+$("studyDhFrame").addEventListener("load", () => stabilizeDataHarmonizerFrameRows("studyDhFrame"));
+$("studyDhFrame").addEventListener("load", markDhFrameLoaded);
+
 function reloadExpDhFrame() {
   const frame = $("expDhFrame");
   if (!frame) return;
   if (expDhAutosaveTimer) { clearInterval(expDhAutosaveTimer); expDhAutosaveTimer = null; }
   if (!frame.src) return; // never pointed at a template (schema not built) — nothing to reload
+  try { frame.contentWindow.location.reload(); } catch { frame.src = frame.src; }
+}
+
+function reloadStudyDhFrame() {
+  const frame = $("studyDhFrame");
+  if (!frame) return;
+  if (studyDhAutosaveTimer) { clearInterval(studyDhAutosaveTimer); studyDhAutosaveTimer = null; }
+  if (!frame.src) return;
   try { frame.contentWindow.location.reload(); } catch { frame.src = frame.src; }
 }
 

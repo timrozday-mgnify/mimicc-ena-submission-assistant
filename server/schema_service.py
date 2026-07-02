@@ -24,8 +24,8 @@ from linkml_lib import io as linkml_io
 # Fixed DataHarmonizer template folders the two grids are pointed at
 # (server/static/app.js: initDhFrames). Selecting a schema for a role
 # overwrites that folder's schema.json rather than registering a new folder.
-ROLE_FOLDERS = {"sample": "mimicc", "experiment": "mimicc_experiment"}
-ROLE_TEMPLATE_CLASSES = {"sample": "MIMICC_Sample", "experiment": "MIMICC_Experiment"}
+ROLE_FOLDERS = {"sample": "mimicc", "experiment": "mimicc_experiment", "study": "study"}
+ROLE_TEMPLATE_CLASSES = {"sample": "MIMICC_Sample", "experiment": "MIMICC_Experiment", "study": "Study"}
 
 _SLUG_RE = re.compile(r"[^a-z0-9_-]+")
 
@@ -235,6 +235,7 @@ def select_for_grid_result(
 
     tpl_dir.mkdir(parents=True, exist_ok=True)
     (tpl_dir / "schema.json").write_text(json.dumps(compiled, indent=2), encoding="utf-8")
+    (tpl_dir / "schema.yaml").write_text(yaml_text, encoding="utf-8")
     export_js = tpl_dir / "export.js"
     if not export_js.exists():
         export_js.write_text("export default {};\n", encoding="utf-8")

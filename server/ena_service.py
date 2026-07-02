@@ -299,6 +299,20 @@ def prepare_samples(dh_export: dict[str, Any], *, where: str | None = DEFAULT_SA
     return prepare_dh_output.prepare_data(data, schema)
 
 
+def prepare_studies(dh_export: dict[str, Any], *, dh_dir: Any) -> dict[str, Any]:
+    """Rename DH export columns to ENA study field names using the selected study schema."""
+    from pathlib import Path as _Path
+
+    from ena_submission_toolkit import prepare_dh_output  # type: ignore
+    from linkml_lib import io as linkml_io  # type: ignore
+
+    schema_yaml = _Path(dh_dir) / "templates" / "study" / "schema.yaml"
+    if not schema_yaml.exists():
+        raise ValueError("No study schema selected. Use the Studies tab to select a schema first.")
+    schema = linkml_io.load_yaml(schema_yaml)
+    return prepare_dh_output.prepare_data(dh_export, schema)
+
+
 def records_from_container(prepared: dict[str, Any]) -> list[dict[str, Any]]:
     """Pull the record list out of a prepared ``Container`` export (thin
     re-export — see ``ena_common.extract_records_from_json`` for the
