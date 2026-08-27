@@ -70,6 +70,7 @@ companions** (a schema editor, a bundle builder, and a local reads uploader).
 | **read-helper-app** | Electron app | TypeScript/Node | Runs Webin-CLI read uploads locally on the user's machine via Java | electron, node | assistant (HTTP on :9100) |
 | **dh-builder** | Docker service + executor | Shell + Python + Node | Rebuilds a DataHarmonizer web bundle from a LinkML schema on demand | DataHarmonizer source, Node/Yarn | assistant, dhtb |
 | **DataHarmonizer** (fork) | UI engine (vendored) | JavaScript + Handsontable | The spreadsheet editor/validator embedded for metadata entry | handsontable | assistant, dhtb, dh-builder |
+| **ena-browser** | UI element (vendored) | TypeScript + Handsontable | Reusable `<ena-browser>` custom element for viewing/filtering/editing ENA Webin **report** records | handsontable | assistant (planned) |
 
 ---
 
@@ -212,6 +213,30 @@ both apps embed for metadata entry. It is not edited as part of normal work; it 
 built into a bundle by `dh-builder` and consumed as a static asset (assistant) or via
 `@handsontable/react-wrapper` (dhtb).
 
+### 4.9 ena-browser
+
+A standalone, framework-free **custom element** (`<ena-browser>`) that renders ENA
+**Webin Reports** records — studies, samples, runs, experiments, analyses, files — in
+a **Handsontable** grid with per-column filtering and sorting, column pinning/
+reordering/hiding, row selection, host-driven dynamic columns, and an optional edit
+mode that emits a change set. Written in **TypeScript**, built with **Vite** in
+library mode into an ESM bundle (Handsontable as a peer dependency) and a
+self-contained **IIFE** bundle the assistant vendors under `server/static/vendor/`
+the same way it vendors the DataHarmonizer bundle — no npm build step is introduced.
+
+It is deliberately a *view*: it never talks to ENA's submission API, never builds a
+manifest, never stores credentials and never persists anything. It takes rows (or an
+optional Reports-API data source, used by its standalone demo app) and emits events —
+`selection-change` (the read↔sample pairing hook), `change` (the edit change set the
+host feeds to `ena-submission-toolkit`'s MODIFY path), `row-action` (release/hold/
+suppress/cancel, executed by the host), `filter-change` and `layout-change`. Status
+of "cancelled"/"suppressed" include/exclude toggles are built in, because every
+consumer wants them.
+
+Repo: `timrozday-mgnify/ena-browser` — design docs (`README.md`, `IMPLEMENTATION_PLAN.md`)
+land first, implementation follows. The assistant's adoption plan lives in this repo's
+`ENA_BROWSER_PLAN.md`.
+
 ---
 
 ## 5. Language & tool choices in the two large apps — and why
@@ -288,6 +313,12 @@ and edits* schemas interactively (React + TS pays for itself).
   `ena-api-client @ git+...@v0.1.0`, `linkml-lib @ ...@v0.1.0` and
   `ena-submission-toolkit @ ...@v0.1.0`; dhtb pins `linkml-lib` and `dh-builder-lib`
   the same way. Upgrades happen by bumping a tag.
+- **ena-browser is vendored as a built artefact.** The assistant commits
+  `dist/ena-browser.iife.js` + `.css` from a pinned release tag into
+  `server/static/vendor/ena-browser/` and loads them with plain `<script>`/`<link>`
+  tags. It depends on nothing else in the ecosystem — the only shared vocabulary is
+  the Reports API field names (mirrored from `ena-api-client`'s models) and the ENA
+  status values.
 - **DataHarmonizer is built, not imported.** A Docker build stage clones the fork
   (`...DataHarmonizer.git#v2.1.0-mimicc`) and runs `dh-builder`'s build steps
   (Node/Yarn) to produce a bundle, which is volume-mounted into the assistant at
