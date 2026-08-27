@@ -31,9 +31,14 @@ tasks:
       - unset DOCKER_DEFAULT_PLATFORM && docker compose up --build {{.CLI_ARGS}}
 
   up:local:
-    desc: Start the stack and the local read-helper-app companion (compose in background, then app in foreground)
+    desc: Start the Compose stack locally in the background (without read-helper-app)
     cmds:
       - unset DOCKER_DEFAULT_PLATFORM && docker compose up --build -d {{.CLI_ARGS}}
+
+  up:local:with-helper:
+    desc: Start the local Compose stack, then the read-helper-app companion in the foreground
+    cmds:
+      - task: up:local
       - task: start:read-helper-app
 
   start:read-helper-app:

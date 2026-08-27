@@ -69,7 +69,7 @@ async function detectHelper() {
   } catch (_) { HELPER_OK = false; }
   if (pill) {
     pill.textContent = HELPER_OK ? "helper: running" : "helper: not detected";
-    pill.className = "tag" + (HELPER_OK ? " high" : "");
+    pill.className = "vf-badge" + (HELPER_OK ? " vf-badge--primary" : "");
   }
   const miss = $("helperMissing");
   if (miss) miss.style.display = HELPER_OK ? "none" : "block";

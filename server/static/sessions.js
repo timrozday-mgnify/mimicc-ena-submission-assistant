@@ -177,7 +177,7 @@ const _FIELD_IDS = [
 ];
 const _CHECK_IDS = ["studyModify", "studyPublic", "sampleModify", "samplePublic", "forceReupload"];
 const _RESULT_IDS = ["studyPrepOut", "studyOut", "prepOut", "sampleOut", "recOut", "readsResults"];
-const _LOG_IDS = ["readsLog", "recLog"];
+const _LOG_IDS = ["studyLog", "readsLog", "recLog"];
 
 // Pristine, blank-slate values for every field/check/result/log, captured
 // once at page load (before any session is applied) — see init(). Used to
@@ -262,7 +262,7 @@ async function applyState(data) {
     TEST = st.test !== undefined ? st.test : SESSION.test_env;
     $("prodToggle").checked = !TEST;
     $("envPill").textContent = TEST ? "TEST" : "PRODUCTION";
-    $("envPill").className = "pill " + (TEST ? "test" : "prod");
+    $("envPill").className = "vf-badge " + (TEST ? "vf-badge--primary" : "vf-badge--secondary");
     // Fields + checkboxes
     Object.entries(st.fields || {}).forEach(([id, v]) => { if ($(id) != null) $(id).value = v; });
     Object.entries(st.checks || {}).forEach(([id, v]) => { if ($(id) != null) $(id).checked = v; });

@@ -21,6 +21,53 @@ function dhApi() { return dataHarmonizerApi("dhFrame"); }
 function expDhApi() { return dataHarmonizerApi("expDhFrame"); }
 function studyDhApi() { return dataHarmonizerApi("studyDhFrame"); }
 
+// Handsontable's internal "isListening" state (see core.js's mousedown
+// handler for the full story) is backed by real focus calls made from the
+// iframe's own JS — so from in here we can neutralize it directly: no-op
+// that iframe's own focus calls unless core.js has marked it as the one the
+// user actually clicked into (`dataset.userActive`). Confirmed via a
+// live-captured stack trace that the actual reclaim goes through
+// Handsontable's TextEditor.prototype.focus(), which calls
+// `this.TEXTAREA.select()` rather than `.focus()` — its own comment says
+// this is deliberate, "for IME support" — fired from prepareEditor() during
+// a border/selection re-render (outsideClickDeselects:false keeps a cell
+// "selected" indefinitely, so any later re-render re-arms this). `.select()`
+// focuses its element as a native side effect while going through neither
+// `HTMLElement.prototype.focus` nor `window.focus`, so it needs its own
+// patch. Re-applied on every load since a fresh navigation gets fresh
+// window/prototypes to patch.
+function disableIframeFocusWhenInactive(frame) {
+  try {
+    const win = frame.contentWindow;
+    if (!win || win.__mimiccFocusPatched) return;
+    // Capturing-phase listener on the iframe's OWN document: guaranteed to
+    // run before Handsontable's own rootElement mousedown handler (same
+    // document, capture always precedes target/bubble) — unlike setting this
+    // from the parent document's mousedown handler, which raced Handsontable's
+    // internal selection setup and lost, blocking legitimate cell selection.
+    win.document.addEventListener("mousedown", () => { frame.dataset.userActive = "1"; }, true);
+    const proto = win.HTMLElement && win.HTMLElement.prototype;
+    if (proto) {
+      const nativeElFocus = proto.focus;
+      proto.focus = function (...args) {
+        if (frame.dataset.userActive === "1") return nativeElFocus.apply(this, args);
+      };
+    }
+    [win.HTMLTextAreaElement, win.HTMLInputElement].forEach((ctor) => {
+      if (!ctor) return;
+      const nativeSelect = ctor.prototype.select;
+      ctor.prototype.select = function (...args) {
+        if (frame.dataset.userActive === "1") return nativeSelect.apply(this, args);
+      };
+    });
+    const nativeWinFocus = win.focus.bind(win);
+    win.focus = (...args) => {
+      if (frame.dataset.userActive === "1") return nativeWinFocus(...args);
+    };
+    win.__mimiccFocusPatched = true;
+  } catch { /* cross-origin — nothing we can do from here */ }
+}
+
 function formatSavedAt(isoTs) {
   return isoTs ? new Date(isoTs).toLocaleTimeString() : "never";
 }
@@ -39,7 +86,7 @@ async function saveDhExport(exportJson, { silent = false } = {}) {
   if (!SESSION) { if (!silent) banner("prepBanner", false, "Open a session first."); return; }
   try {
     const savedAt = await dbSaveDhExport(SESSION.id, "sample", exportJson);
-    $("dhExport").value = JSON.stringify(exportJson);
+    if (document.activeElement !== $("dhExport")) $("dhExport").value = JSON.stringify(exportJson);
     setDhSavedIndicator(savedAt);
     scheduleSave();
     if (!silent) banner("prepBanner", true, "Exported from DataHarmonizer.");
@@ -81,9 +128,9 @@ function startDhAutosave() {
   }, 500);
 }
 $("dhFrame").addEventListener("load", startDhAutosave);
-$("dhFrame").addEventListener("load", () => propagateThemeToFrames(currentEffectiveTheme()));
 $("dhFrame").addEventListener("load", () => stabilizeDataHarmonizerFrameRows("dhFrame"));
 $("dhFrame").addEventListener("load", markDhFrameLoaded);
+$("dhFrame").addEventListener("load", () => disableIframeFocusWhenInactive($("dhFrame")));
 
 // ---------------------------------------------------------------------------
 // Experiment metadata DataHarmonizer panel (Reads tab)
@@ -114,7 +161,7 @@ function dhRoleConfig(role) {
     return { frameId: "dhFrame", missingId: "dhMissing", bannerId: "prepBanner" };
   }
   if (role === "study") {
-    return { frameId: "studyDhFrame", missingId: "studyDhMissing", bannerId: "studyBanner" };
+    return { frameId: "studyDhFrame", missingId: "studyDhMissing", bannerId: "studyPrepBanner" };
   }
   return { frameId: "expDhFrame", missingId: "expDhMissing", bannerId: "readsBanner" };
 }
@@ -217,7 +264,7 @@ async function initDhFrames() {
 // experiment metadata schemas" for the column-title contract.
 async function checkExpSchemaColumns() {
   const el = $("expSchemaWarning");
-  el.className = "banner";
+  el.style.display = "none";
   el.textContent = "";
   try {
     const folder = EXP_TEMPLATE_PATH.split("/")[0];
@@ -227,7 +274,8 @@ async function checkExpSchemaColumns() {
     );
     const missing = [EXP_KEY_TITLE, EXP_SAMPLE_TITLE].filter((t) => !titles.has(t));
     if (missing.length) {
-      el.className = "banner warn";
+      el.className = "vf-banner vf-banner--alert vf-banner--warning";
+      el.style.display = "block";
       el.textContent = `This experiment schema is missing the column(s) ${missing.join(", ")} — read-pairing sync and submission won't be able to match rows by experiment name/sample.`;
     }
   } catch { /* best-effort only */ }
@@ -278,25 +326,25 @@ function startExpDhAutosave() {
   }, 500);
 }
 $("expDhFrame").addEventListener("load", startExpDhAutosave);
-$("expDhFrame").addEventListener("load", () => propagateThemeToFrames(currentEffectiveTheme()));
 $("expDhFrame").addEventListener("load", () => stabilizeDataHarmonizerFrameRows("expDhFrame"));
 $("expDhFrame").addEventListener("load", markDhFrameLoaded);
+$("expDhFrame").addEventListener("load", () => disableIframeFocusWhenInactive($("expDhFrame")));
 
 async function saveStudyDhExport(exportJson, { silent = false } = {}) {
-  if (!SESSION) { if (!silent) banner("studyBanner", false, "Open a session first."); return; }
+  if (!SESSION) { if (!silent) banner("studyPrepBanner", false, "Open a session first."); return; }
   try {
     const savedAt = await dbSaveDhExport(SESSION.id, "study", exportJson);
     setStudyDhSavedIndicator(savedAt);
     scheduleSave();
-    if (!silent) banner("studyBanner", true, "Saved study metadata.");
+    if (!silent) banner("studyPrepBanner", true, "Saved study metadata.");
   } catch (e) {
-    if (!silent) banner("studyBanner", false, e.message);
+    if (!silent) banner("studyPrepBanner", false, e.message);
   }
 }
 
 function exportStudyDhNow() {
   const dh = studyDhApi();
-  if (!dh) { banner("studyBanner", false, "Study DataHarmonizer isn't ready yet."); return; }
+  if (!dh) { banner("studyPrepBanner", false, "Study DataHarmonizer isn't ready yet."); return; }
   saveStudyDhExport(dh.getExportJson());
 }
 
@@ -326,9 +374,9 @@ function startStudyDhAutosave() {
   }, 500);
 }
 $("studyDhFrame").addEventListener("load", startStudyDhAutosave);
-$("studyDhFrame").addEventListener("load", () => propagateThemeToFrames(currentEffectiveTheme()));
 $("studyDhFrame").addEventListener("load", () => stabilizeDataHarmonizerFrameRows("studyDhFrame"));
 $("studyDhFrame").addEventListener("load", markDhFrameLoaded);
+$("studyDhFrame").addEventListener("load", () => disableIframeFocusWhenInactive($("studyDhFrame")));
 
 function reloadExpDhFrame() {
   const frame = $("expDhFrame");
