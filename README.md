@@ -33,7 +33,9 @@ New glue added here:
 - **DH → submission pipeline** — filter a DataHarmonizer export to sample fields
   and rename columns to ENA field names (the `submit_mimicc_samples.sh` flow).
 - **Account records browser** — list studies/samples/runs/experiments and run
-  lifecycle actions (release/hold/suppress/cancel).
+  lifecycle actions (release/hold/suppress/cancel). Planned to move onto the
+  reusable [`ena-browser`](https://github.com/timrozday-mgnify/ena-browser)
+  grid element — see "Record grids (ena-browser)" below and `ENA_BROWSER_PLAN.md`.
 
 Everything runs against ENA **test** by default; a header toggle switches to
 **production** (with a confirm). Webin credentials are held per-user in a
@@ -299,6 +301,63 @@ The Reads tab's pairing table can be exported/imported as TSV (**Export pairings
 This is a full round-trip of a pairing row (not just the sample assignment), so importing works
 standalone without scanning first; importing onto an existing table merges by `NAME` (updates a
 matching row, appends a new one otherwise).
+
+### Record grids (ena-browser)
+
+Record tables — anything showing rows that came from ENA's **Webin Reports API** —
+are being moved onto [`ena-browser`](https://github.com/timrozday-mgnify/ena-browser),
+a standalone, framework-free `<ena-browser>` custom element built on Handsontable.
+It is vendored as a prebuilt bundle (`server/static/vendor/ena-browser/`) at a pinned
+release tag and loaded with plain `<script>`/`<link>` tags — it introduces no npm
+build step, exactly like the embedded DataHarmonizer bundle.
+
+**Three places it is used:**
+
+1. **Records tab** — the main browser. Per-column filtering and sorting, column
+   pinning/reordering/hiding, and (in `mode="edit"`) cell editing that produces a
+   *change set*, which this app turns into an ENA **MODIFY** submission via
+   `ena-submission-toolkit`. The "hide cancelled" / "hide suppressed" toggles are
+   built into the element and replace the old status `<select>`.
+2. **Reads tab, pairing panel** — the *samples* side of read↔sample pairing, in
+   `selection-mode="single"`. Selecting a sample fires `ena-browser:selection-change`;
+   this app stores `detail.lastKey` in `SELECTED_SAMPLE` and the subsequent click on a
+   read-group row records the pairing, as it does today. The per-sample file count is
+   a **pinned custom column** (`reads_assigned`) that this app pushes in with
+   `setCustomValues("reads_assigned", {ERS…: 2})` after every change to the run rows —
+   updating it does not re-sort the grid or lose the selection.
+3. **Post-submission confirmation** — a read-only grid filtered to the accessions just
+   submitted, to show the records really are in ENA (alongside, not instead of, the
+   receipt table).
+
+**The division of responsibility.** The element is a *view*: it renders, filters,
+sorts, selects and tracks edits. It does not fetch, does not hold credentials, does
+not know about test vs production, does not persist anything, and never submits.
+This app keeps all of that — the `/api/records/*` fetches, the Webin credentials, the
+debug log, the release/hold/suppress/cancel handlers (the element only *emits*
+`ena-browser:row-action`), the IndexedDB session state that stores the grid layout and
+filters, and the pairing logic that joins a selected sample to a read group.
+Manifest/XML building for modifications stays in `ena-submission-toolkit`.
+
+**Usage sketch:**
+
+```js
+const grid = document.getElementById("recGrid");
+grid.config = { entity: "samples", mode: "edit", editableColumns: ["alias", "title"] };
+grid.setRows(await api(`/api/records/samples?test=${TEST}`));
+
+grid.addEventListener("ena-browser:change", () => {
+  $("recSubmit").disabled = grid.getChangeSet().rows.length === 0;
+});
+grid.addEventListener("ena-browser:row-action", (e) => recAction(e.detail.action, e.detail.key));
+```
+
+Theming needs no wiring: the element reads the same CSS custom properties this app
+already defines (`--bg`, `--panel`, `--line`, `--fg`, `--muted`, `--accent`, …) and
+honours `data-theme`, so the header's light/dark switch drives it — unlike the
+DataHarmonizer iframes, which need `propagateThemeToFrames()`.
+
+The step-by-step adoption plan (including which Playwright tests change) is in
+[`ENA_BROWSER_PLAN.md`](ENA_BROWSER_PLAN.md).
 
 ## Submission sessions
 
