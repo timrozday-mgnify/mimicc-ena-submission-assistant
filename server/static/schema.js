@@ -61,7 +61,7 @@ function renderSchemaLibrary() {
 
 function _roleMeta(role) {
   if (role === "sample") return { selectId: "sampleSchemaSelect", bannerId: "prepBanner" };
-  if (role === "study")  return { selectId: "studySchemaSelect",  bannerId: "studyBanner" };
+  if (role === "study")  return { selectId: "studySchemaSelect",  bannerId: "studyPrepBanner" };
   return { selectId: "expSchemaSelect", bannerId: "readsBanner" };
 }
 
@@ -207,7 +207,6 @@ window.addEventListener("message", (ev) => {
   if (msg.type === "dhtb.ready") {
     DHTB_READY = true;
     $("schemaEditorMissing").style.display = "none";
-    postToDhtb("dhtb.setTheme", { theme: currentEffectiveTheme() });
     if (DHTB_PENDING_YAML) { postToDhtb("dhtb.loadYaml", DHTB_PENDING_YAML); DHTB_PENDING_YAML = null; }
   } else if (msg.type === "dhtb.exported") {
     window.__dhtbExportedYaml = msg.yaml;
