@@ -47,7 +47,7 @@ cache only and are never written to the database.
 Browser ── login cookie ──► Django server (server/config/, views_*.py)
    │                          ├── auth.py + orm/ ── Django ORM (accounts, sessions, reads ledger) → Postgres
    │                          ├── credentials_store.py ── per-user Webin creds, cache-backed (never DB)
-   │                          ├── ena_service.py ── ena-api-client submit_study/submit_sample (REST/XML, server-side)
+   │                          ├── ena_service.py ── ena-submission-toolkit (records/submit_study/submit_sample) ── ENA (REST/XML, server-side)
    │                          └── read_assign.py ── suggest + manifest text build
    │  fetch manifest + plan ◄─┘
    │  POST manifest + Webin creds
@@ -473,7 +473,8 @@ server/
   orm/                  Django app: models.py (User/LoginSession/SubmissionSession/ReadsRun), migrations/,
                         management/commands/bootstrap_admin.py
   dbsetup.py            one-time django.setup() bootstrap
-  ena_service.py        studies/samples/records/actions (wraps reused libraries, server-side REST)
+  ena_service.py        studies/samples/records/actions — MIMICC glue only; every ENA request is made by
+                        ena-submission-toolkit (records.py) over ena-api-client, never here
   read_assign.py        scan / suggest / manifest (text) build for reads
   session_store.py      submission sessions + reads ledger, Django-ORM-backed, owner-scoped
   schema_service.py     schema library: list/save/delete, ENA XML/XSD import/merge, grid selection

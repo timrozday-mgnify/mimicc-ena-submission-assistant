@@ -4,8 +4,15 @@ Wraps the existing reusable functions so the views stay thin:
 
   * studies / samples   -> ``submit_study.submit_batch`` / ``submit_sample.submit_batch``
   * DH export -> records -> ``linkml_lib.dh_data.filter_columns`` + ``prepare_dh_output.prepare``
-  * account records      -> ``WebinClient.reports.list_*``
-  * lifecycle actions    -> ``WebinClient.submit.{cancel,suppress,release,hold,kill}``
+  * account records      -> ``records.list_records``
+  * lifecycle actions    -> ``records.record_action``
+
+**No ENA request is made in this repo.** Everything that talks to ENA lives in
+``ena-submission-toolkit`` (``records.py``: listing, MODIFY, lifecycle actions,
+credentials) over ``ena-api-client`` (transport), so ``ena-browser-ui`` and any
+other caller get the same behaviour. What is MIMICC-specific — the sample
+column filter, the DataHarmonizer plumbing, the schema-driven unit rules — is
+what remains here.
 
 Credentials are passed explicitly (held in server memory by ``main.py``) and
 turned into a per-call ``WebinClient`` — nothing is read from or written to the
@@ -18,13 +25,13 @@ import io
 import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import _bootstrap  # schema/XSD asset paths — see _bootstrap.py
 
 if TYPE_CHECKING:  # pragma: no cover
     from ena_api import WebinClient
+    from ena_submission_toolkit.records import Credentials
 
 # Heavy / optional dependencies (linkml, lxml, pendulum, typer, ena_api) are
 # imported lazily inside the functions that use them, so that ``import main``
@@ -34,24 +41,18 @@ if TYPE_CHECKING:  # pragma: no cover
 # shell/submit_mimicc_samples.sh): keep only sample/study-relevant slots.
 DEFAULT_SAMPLE_FILTER = "source IN ('ERC000025', 'MIMICC.custom', 'ENA.sample', 'ENA.project')"
 
-# Reports API entity -> ReportsProxy method.
-_REPORT_METHODS = {
-    "studies": "list_projects",
-    "projects": "list_projects",
-    "samples": "list_samples",
-    "runs": "list_runs",
-    "experiments": "list_experiments",
-    "analyses": "list_analyses",
-    "files": "list_files",
-}
 
-_ACTIONS = {"cancel", "suppress", "release", "hold", "kill"}
+def _records():
+    from ena_submission_toolkit import records  # type: ignore
+
+    return records
 
 
-def _ena_api():
-    from ena_api import WebinClient, WebinConfig  # type: ignore
-
-    return WebinClient, WebinConfig
+def __getattr__(name: str) -> Any:
+    """Expose ``ena_service.Credentials`` without importing the stack eagerly."""
+    if name == "Credentials":
+        return _records().Credentials
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _common():
@@ -79,39 +80,24 @@ def _capture_ena_logs() -> Iterator[Callable[[], list[str]]]:
         logger.setLevel(previous_level)
 
 
-@dataclass(frozen=True)
-class Credentials:
-    username: str
-    password: str
-
-
 @contextmanager
 def webin_client(creds: Credentials, test: bool) -> Iterator[WebinClient]:
-    """Build an authenticated WebinClient for the duration of the block."""
-    WebinClient, WebinConfig = _ena_api()
-    client = WebinClient(config=WebinConfig(webin_id=creds.username, password=creds.password, test=test))
-    try:
+    """An authenticated WebinClient for the duration of the block."""
+    with _records().webin_client(creds, test) as client:
         yield client
-    finally:
-        client.close()
 
 
 def validate_credentials(creds: Credentials, *, test: bool) -> None:
     """Validate Webin credentials with a lightweight authenticated reports call."""
-    with webin_client(creds, test) as client:
-        client.reports.list_projects(max_results=1)
+    _records().validate_credentials(creds, test=test)
 
 
 # ---------------------------------------------------------------------------
 # Records browser
+#
+# All three below are thin passthroughs to ``ena_submission_toolkit.records``;
+# they exist only so the views keep one import and one calling convention.
 # ---------------------------------------------------------------------------
-
-
-def _filter_by_status(rows: list[dict[str, Any]], status: str) -> list[dict[str, Any]]:
-    if status.lower() == "all":
-        return rows
-    target = status.upper()
-    return [r for r in rows if (r.get("status") or "").upper() == target]
 
 
 def list_records(
@@ -123,16 +109,7 @@ def list_records(
     max_results: int = 5000,
 ) -> list[dict[str, Any]]:
     """List account records for one entity type via the Webin Reports API."""
-    method = _REPORT_METHODS.get(entity)
-    if method is None:
-        raise ValueError(f"Unknown entity {entity!r}; expected one of {', '.join(_REPORT_METHODS)}")
-    with webin_client(creds, test) as client:
-        # list_runs() already joins against list_experiments() to fill in
-        # study_accession/sample_accession when the run's own report omits them.
-        rows = [r.model_dump() for r in getattr(client.reports, method)(max_results=max_results)]
-    if entity != "files":
-        rows = _filter_by_status(rows, status)
-    return rows
+    return _records().list_records(creds, entity, test=test, status=status, max_results=max_results)
 
 
 def lookup_existing_runs(
@@ -142,14 +119,10 @@ def lookup_existing_runs(
     test: bool,
     max_results: int = 5000,
 ) -> dict[str, dict[str, str]]:
-    """Find runs already in ENA by their experiment alias (thin re-export — see
-    ``ReportsProxy.find_runs_by_experiment_alias`` for the actual lookup,
-    used by reads-submission resumability to detect "is this run already
-    submitted?" on a resume)."""
-    if not aliases:
-        return {}
-    with webin_client(creds, test) as client:
-        return client.reports.find_runs_by_experiment_alias(aliases, max_results=max_results)
+    """Find runs already in ENA by their experiment alias — used by
+    reads-submission resumability to detect "is this run already submitted?"
+    on a resume."""
+    return _records().find_runs_by_experiment_alias(creds, aliases, test=test, max_results=max_results)
 
 
 # ---------------------------------------------------------------------------
@@ -334,24 +307,10 @@ def run_action(
     alias: str | None = None,
     hold_until: str | None = None,
 ) -> dict[str, Any]:
-    """Run a single submission action against an accession."""
-    if action not in _ACTIONS:
-        raise ValueError(f"Unknown action {action!r}; expected one of {', '.join(sorted(_ACTIONS))}")
-    if action == "hold":
-        if not hold_until:
-            raise ValueError("hold requires a hold_until date")
-        _common().validate_hold_until(hold_until)
+    """Run a single submission action against an accession.
 
-    result: dict[str, Any] = {"accession": accession, "action": action}
-    with webin_client(creds, test) as client:
-        fn = getattr(client.submit, action)
-        kwargs: dict[str, Any] = {"alias": alias} if alias else {}
-        args: tuple[Any, ...] = (accession, hold_until) if action == "hold" else (accession,)
-        try:
-            receipt = fn(*args, **kwargs)
-            result["success"] = receipt.success
-            result["messages"] = "; ".join(receipt.messages + receipt.errors)
-        except Exception as exc:  # noqa: BLE001
-            result["success"] = False
-            result["messages"] = str(exc)
-    return result
+    ``records.record_action`` with this app's argument order, and its messages
+    flattened to one string — which is what the page renders.
+    """
+    result = _records().record_action(creds, accession, action, test=test, hold_until=hold_until, alias=alias)
+    return {**result, "messages": "; ".join(result["messages"])}

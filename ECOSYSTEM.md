@@ -110,7 +110,9 @@ modes: *local* (single-user auto-login, Postgres + companions via Docker Compose
 
 - **Backend** (`server/`): `views_*.py` split by domain (auth, credentials, sessions,
   records, schemas, core); `orm/models.py` (`User`, `SubmissionSession`, `ReadsRun`);
-  `ena_service.py` wraps `ena-api-client` + `ena-submission-toolkit`; `schema_service.py`
+  `ena_service.py` is MIMICC glue over `ena-submission-toolkit` (its `records.py` owns
+  listing, MODIFY and lifecycle actions, shared with `ena-browser-ui`) — no ENA request is
+  made in this repo; `schema_service.py`
   wraps `linkml-lib`; `read_assign.py` groups reads and builds webin-cli manifests;
   `credentials_store.py` keeps per-user Webin credentials in the cache only (never the
   DB); `session_store.py` persists submission sessions to Postgres.
