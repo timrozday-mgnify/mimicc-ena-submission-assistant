@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import io
 import logging
+import xml.etree.ElementTree as ET
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -58,6 +59,29 @@ def _common():
     from ena_submission_toolkit import common  # type: ignore
 
     return common
+
+
+def _prefixed(level: str, message: str) -> str:
+    stripped = message.strip()
+    if stripped.startswith(("INFO:", "WARNING:", "ERROR:")):
+        return stripped
+    return f"{level}: {message}"
+
+
+def _study_project_summaries(xml_bytes: bytes) -> list[str]:
+    """Return concise native ENA PROJECT identity details for diagnostics."""
+    root = ET.fromstring(xml_bytes)
+    summaries: list[str] = []
+    for idx, project in enumerate(root.findall(".//PROJECT"), start=1):
+        alias = project.attrib.get("alias", "")
+        title = project.findtext("TITLE") or ""
+        name = project.findtext("NAME")
+        description = project.findtext("DESCRIPTION")
+        summaries.append(
+            f"PROJECT[{idx}]: alias={alias!r}, TITLE={title!r}, "
+            f"NAME_present={name is not None}, DESCRIPTION_present={description is not None}"
+        )
+    return summaries
 
 
 @contextmanager
@@ -185,30 +209,149 @@ def submit_studies(
     from ena_submission_toolkit import submit_study  # type: ignore
 
     common = _common()
-    if hold_until:
-        common.validate_hold_until(hold_until)
-    env_label = "TEST" if test else "PRODUCTION"
-    xsd = _bootstrap.xsd_dir()
+    with _capture_ena_logs() as get_logs:
+        workflow_logs: list[str] = []
 
-    with webin_client(creds, test) as client:
-        if modify:
-            account = [r.model_dump() for r in client.reports.list_projects(max_results=max_results)]
-            dups = common.find_duplicates_by_alias_title(
-                records, account, title_field="STUDY_TITLE", entity_label="studies"
+        def log(message: str) -> None:
+            workflow_logs.append(f"INFO: {message}")
+
+        def warn(message: str) -> None:
+            workflow_logs.append(f"WARNING: {message}")
+
+        def error_log(message: str) -> None:
+            workflow_logs.append(f"ERROR: {message}")
+
+        def logs_with_toolkit() -> list[str]:
+            return workflow_logs + get_logs()
+
+        def log_record_summary(batch: list[dict[str, Any]]) -> None:
+            log("Prepared study record summary:")
+            for idx, record in enumerate(batch, start=1):
+                alias = record.get("alias") or "<missing alias>"
+                title = record.get("TITLE") or "<missing TITLE>"
+                desc = record.get("DESCRIPTION") or ""
+                name = record.get("NAME") or "<not set>"
+                missing = [field for field in ("TITLE",) if not str(record.get(field) or "").strip()]
+                log(f"  record {idx}: alias={alias!r}, title={title!r}, name={name!r}, description_chars={len(desc)}")
+                if missing:
+                    warn(f"  record {idx}: missing recommended/required field(s): {', '.join(missing)}")
+
+        try:
+            env_label = "TEST" if test else "PRODUCTION"
+            log(
+                "Starting study submission: "
+                f"records={len(records)}, action={'MODIFY' if modify else 'ADD'}, env={env_label}, "
+                f"hold_until={hold_until or 'none'}, release_public={public}"
             )
-            _, to_submit, _ = common.classify_duplicates(records, dups, title_field="STUDY_TITLE", force=True)
-            if not to_submit:
-                return {"success": False, "accessions": [], "error": "No matching existing studies to modify"}
-            action, batch = "MODIFY", to_submit
-        else:
-            action, batch = "ADD", records
+            if hold_until:
+                log(f"Validating hold-until date: {hold_until}")
+                common.validate_hold_until(hold_until)
+                log("Hold-until date validation passed")
+            else:
+                log("No hold-until date supplied; skipping hold-date validation")
 
-        success, accessions = submit_study.submit_batch(
-            batch, action, xsd=xsd, hold_until=hold_until, client=client, env_label=env_label
-        )
-        if success and public:
-            _release_all(client, accessions)
-    return {"success": success, "accessions": accessions}
+            xsd = _bootstrap.xsd_dir()
+            log(f"Using ENA XSD directory: {xsd}")
+
+            log("Opening authenticated ENA Webin client")
+            with webin_client(creds, test) as client:
+                log("ENA Webin client opened")
+                if modify:
+                    log(f"Modify mode: fetching up to {max_results} existing studies from ENA reports")
+                    account = [r.model_dump() for r in client.reports.list_projects(max_results=max_results)]
+                    log(f"Modify mode: fetched {len(account)} existing study record(s)")
+                    log("Modify mode: matching prepared records to existing studies by alias/title")
+                    dups = common.find_duplicates_by_alias_title(
+                        records, account, title_field="TITLE", entity_label="studies"
+                    )
+                    _, to_submit, _ = common.classify_duplicates(records, dups, title_field="TITLE", force=True)
+                    log(f"Modify mode: {len(to_submit)} prepared record(s) matched existing studies")
+                    if not to_submit:
+                        error = "No matching existing studies to modify"
+                        return {
+                            "success": False,
+                            "accessions": [],
+                            "error": error,
+                            "logs": logs_with_toolkit() + [f"ERROR: {error}"],
+                        }
+                    action, batch = "MODIFY", to_submit
+                else:
+                    action, batch = "ADD", records
+                    log(f"Add mode: submitting all {len(batch)} prepared study record(s)")
+
+                log_record_summary(batch)
+                log(f"Building ENA study XML manifest: action={action}, records={len(batch)}")
+                xml_bytes = submit_study.build_manifest(batch, hold_until=hold_until, action=action)
+                log(f"Built ENA study XML manifest: bytes={len(xml_bytes)}")
+                for summary in _study_project_summaries(xml_bytes):
+                    log(f"Built native ENA project identity: {summary}")
+
+                log("Validating study XML manifest against ENA.project.xsd")
+                is_valid, xsd_msgs = submit_study.validate_manifest(xml_bytes, xsd)
+                if xsd_msgs:
+                    log("XSD validation messages:")
+                    for msg in xsd_msgs:
+                        workflow_logs.append(_prefixed("INFO", f"  {msg}"))
+                else:
+                    log("XSD validation returned no detail messages")
+                log(f"XSD validation result: valid={is_valid}")
+                if not is_valid:
+                    error = "Study XML failed local XSD validation; it was not submitted to ENA."
+                    error_log(error)
+                    return {"success": False, "accessions": [], "error": error, "logs": logs_with_toolkit()}
+
+                log(f"Pre-validation passed; submitting study XML to ENA ({env_label})")
+                success, accessions, receipt_msgs = submit_study.submit_manifest(xml_bytes, client)
+                log(
+                    "ENA receipt parsed: "
+                    f"success={success}, accession_records={len(accessions or [])}, message_count={len(receipt_msgs or [])}"
+                )
+                if receipt_msgs:
+                    log("ENA receipt messages:")
+                    receipt_level = "ERROR" if not success else "INFO"
+                    for msg in receipt_msgs:
+                        stripped = msg.strip()
+                        for prefix in ("INFO:", "WARNING:", "ERROR:"):
+                            if stripped.startswith(prefix):
+                                level, text = prefix[:-1], stripped[len(prefix) :].strip()
+                                break
+                        else:
+                            level, text = receipt_level, stripped
+                        workflow_logs.append(_prefixed(level, f"Receipt: {text}"))
+                else:
+                    warn("ENA receipt contained no messages or errors")
+                if not success:
+                    error_log("ENA receipt reported failure for the study submission")
+                if success and public:
+                    log(f"Release-public requested: releasing {len(accessions)} submitted study accession(s)")
+                    _release_all(client, accessions)
+                    for record in accessions:
+                        log(
+                            "  release result: "
+                            f"alias={record.get('alias', '')!r}, accession={record.get('accession', '')!r}, "
+                            f"status={record.get('release_status', '<not reported>')!r}"
+                        )
+                    log("Release-public step finished")
+                if success:
+                    log(f"Study submission succeeded: accession_records={len(accessions or [])}")
+
+            diagnostic = next(
+                (m for m in reversed(receipt_msgs) if m.upper().startswith(("WARNING:", "ERROR:"))),
+                None,
+            )
+            error = (
+                None
+                if success
+                else (diagnostic or "ENA rejected the study submission; see receipt messages in the log.")
+            )
+            result = {"success": success, "accessions": accessions, "logs": logs_with_toolkit()}
+            if error:
+                result["error"] = error
+            return result
+        except Exception as exc:  # noqa: BLE001 - return full diagnostics to the UI
+            logs = logs_with_toolkit()
+            logs.append(f"ERROR: {exc}")
+            return {"success": False, "accessions": [], "error": str(exc), "logs": logs}
 
 
 def submit_samples(

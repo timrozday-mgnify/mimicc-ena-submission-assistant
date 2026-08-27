@@ -200,8 +200,8 @@ def test_schema_selection_reloads_real_dh_iframes_without_toolbar_error(page):
     page.wait_for_selector("#studySchemaSelect option[value='sra_study']", state="attached")
     page.select_option("#studySchemaSelect", "sra_study")
     page.click("#studyDhPanel button:has-text('Use this schema')")
-    _wait_for_banner_text(page, "#studyBanner", "Switched the study grid", errors)
-    assert "Switched the study grid" in page.inner_text("#studyBanner")
+    _wait_for_banner_text(page, "#studyPrepBanner", "Switched the study grid", errors)
+    assert "Switched the study grid" in page.inner_text("#studyPrepBanner")
     _wait_for_dh_iframe_ready(page, "#studyDhFrame")
 
     assert not [message for message in errors if "getColumnCoordinates" in message]
