@@ -106,10 +106,19 @@ def list_records(
     *,
     test: bool,
     status: str = "all",
+    full_fields: bool = False,
     max_results: int = 5000,
 ) -> list[dict[str, Any]]:
-    """List account records for one entity type via the Webin Reports API."""
-    return _records().list_records(creds, entity, test=test, status=status, max_results=max_results)
+    """List account records for one entity type via the Webin Reports API.
+
+    ``full_fields`` also fills each row out from the record's own XML (every
+    checklist attribute as submitted, both environments) and, on production,
+    from the ENA Portal index — the Reports API itself returns only accession,
+    alias, title and status. It costs extra requests, so it is opt-in per call.
+    """
+    return _records().list_records(
+        creds, entity, test=test, status=status, full_fields=full_fields, max_results=max_results
+    )
 
 
 def lookup_existing_runs(

@@ -33,7 +33,13 @@ New glue added here:
 - **DH → submission pipeline** — filter a DataHarmonizer export to sample fields
   and rename columns to ENA field names (the `submit_mimicc_samples.sh` flow).
 - **Account records browser** — list studies/samples/runs/experiments and run
-  lifecycle actions (release/hold/suppress/cancel). Planned to move onto the
+  lifecycle actions (release/hold/suppress/cancel). The **All fields** toggle
+  reads each record's full field set rather than the five columns the Webin
+  Reports API returns: every checklist attribute as submitted (from the ENA
+  Browser API — private records included, and it is the only source that works
+  against the test environment) plus, on production, the ENA Portal's ~200
+  indexed fields. It costs an extra request per 100 records, so it is off by
+  default. Planned to move onto the
   reusable [`ena-browser`](https://github.com/timrozday-mgnify/ena-browser)
   grid element — see "Record grids (ena-browser)" below and `ENA_BROWSER_PLAN.md`.
 

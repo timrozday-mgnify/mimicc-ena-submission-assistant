@@ -471,7 +471,9 @@
         <div><label>Status</label><select id="recStatus">
           <option value="all">all</option><option value="private">private</option><option value="public">public</option>
         </select></div>
-        <div style="align-self:flex-end"><button class="btn" onclick="loadRecords(document.getElementById('recEntity').value,'recOut',document.getElementById('recStatus').value,true)">Fetch</button></div>
+        <div style="align-self:flex-end"><label class="muted" title="Also read each record's full field set — every checklist attribute it was submitted with (and, on production, the ENA Portal's indexed fields). Slower: an extra request per 100 records.">
+          <input type="checkbox" id="recFullFields"> All fields</label></div>
+        <div style="align-self:flex-end"><button class="btn" onclick="loadRecords(document.getElementById('recEntity').value,'recOut',document.getElementById('recStatus').value,true,document.getElementById('recFullFields').checked)">Fetch</button></div>
       </div>
       <div class="banner" id="recBanner"></div>
       <div class="scroll" id="recOut"></div>

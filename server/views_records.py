@@ -35,6 +35,21 @@ def _slug(text: str) -> str:
     return s or "x"
 
 
+def _list_params(request: HttpRequest) -> dict[str, Any]:
+    """The query string of a record listing, as ``list_records`` kwargs.
+
+    ``full_fields`` is off by default: it costs a Browser API request per 100
+    records (and, on production, a Portal request per 50), which is only worth
+    paying when someone actually wants the checklist columns.
+    """
+    return {
+        "test": request.GET.get("test", "true").lower() != "false",
+        "status": request.GET.get("status", "all"),
+        "full_fields": request.GET.get("full_fields", "false").lower() == "true",
+        "max_results": int(request.GET.get("max_results", 5000)),
+    }
+
+
 def session_run_alias(session_name: str, run_name: str) -> str:
     """Stable per-run alias. Session names are unique per user, so this is
     identical across re-submits — which is what lets us detect a run already in
@@ -153,12 +168,7 @@ def study_list(request: HttpRequest) -> JsonResponse:
     creds, err = webin_creds.from_request(request)
     if err:
         return err
-    test = request.GET.get("test", "true").lower() != "false"
-    status = request.GET.get("status", "all")
-    max_results = int(request.GET.get("max_results", 5000))
-    return JsonResponse(
-        ena_service.list_records(creds, "studies", test=test, status=status, max_results=max_results), safe=False
-    )
+    return JsonResponse(ena_service.list_records(creds, "studies", **_list_params(request)), safe=False)
 
 
 def study_prepare(request: HttpRequest) -> JsonResponse:
@@ -228,12 +238,7 @@ def sample_list(request: HttpRequest) -> JsonResponse:
     creds, err = webin_creds.from_request(request)
     if err:
         return err
-    test = request.GET.get("test", "true").lower() != "false"
-    status = request.GET.get("status", "all")
-    max_results = int(request.GET.get("max_results", 5000))
-    return JsonResponse(
-        ena_service.list_records(creds, "samples", test=test, status=status, max_results=max_results), safe=False
-    )
+    return JsonResponse(ena_service.list_records(creds, "samples", **_list_params(request)), safe=False)
 
 
 # ---------------------------------------------------------------------------
@@ -247,13 +252,8 @@ def records_list(request: HttpRequest, entity: str) -> JsonResponse:
     creds, err = webin_creds.from_request(request)
     if err:
         return err
-    test = request.GET.get("test", "true").lower() != "false"
-    status = request.GET.get("status", "all")
-    max_results = int(request.GET.get("max_results", 5000))
     try:
-        return JsonResponse(
-            ena_service.list_records(creds, entity, test=test, status=status, max_results=max_results), safe=False
-        )
+        return JsonResponse(ena_service.list_records(creds, entity, **_list_params(request)), safe=False)
     except ValueError as exc:
         return JsonResponse({"detail": str(exc)}, status=400)
 

@@ -76,6 +76,9 @@ def test_list_records_surfaces_whatever_reports_proxy_returns(monkeypatch):
     from ena_submission_toolkit import records
 
     reports = SimpleNamespace(
+        # A run listing also reads the run-processing report (see
+        # records._run_processing); nothing here is testing that.
+        list_run_processes=lambda **_kwargs: [],
         list_runs=lambda max_results: [
             _ReportRow(
                 {
