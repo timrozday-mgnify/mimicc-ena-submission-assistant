@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import sys
+import types
+from contextlib import contextmanager
+
 import conftest
 import ena_service
 
@@ -120,11 +124,178 @@ async def test_sample_prepare(client, monkeypatch):
 
 async def test_study_submit(client, with_creds, monkeypatch):
     monkeypatch.setattr(
-        ena_service, "submit_studies", lambda *a, **k: {"success": True, "accessions": [{"accession": "ERP9"}]}
+        ena_service,
+        "submit_studies",
+        lambda *a, **k: {
+            "success": True,
+            "accessions": [{"accession": "ERP9"}],
+            "logs": ["INFO: Study submission accepted"],
+        },
     )
-    r = await client.post("/api/study/submit", json={"records": [{"alias": "x", "STUDY_TITLE": "t"}], "test": True})
+    r = await client.post("/api/study/submit", json={"records": [{"alias": "x", "TITLE": "t"}], "test": True})
     assert r.status_code == 200
-    assert r.json()["accessions"][0]["accession"] == "ERP9"
+    body = r.json()
+    assert body["accessions"][0]["accession"] == "ERP9"
+    assert body["logs"] == ["INFO: Study submission accepted"]
+
+
+async def test_study_submit_includes_failure_logs(client, with_creds, monkeypatch):
+    monkeypatch.setattr(
+        ena_service,
+        "submit_studies",
+        lambda *a, **k: {
+            "success": False,
+            "accessions": [],
+            "error": "receipt rejected",
+            "logs": ["INFO: XSD validation passed", "INFO: Receipt: invalid study"],
+        },
+    )
+    r = await client.post("/api/study/submit", json={"records": [{"alias": "x", "TITLE": "t"}], "test": True})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["success"] is False
+    assert body["logs"] == ["INFO: XSD validation passed", "INFO: Receipt: invalid study"]
+
+
+def test_submit_studies_adds_stage_logs_when_toolkit_returns_failure(monkeypatch):
+    toolkit = types.ModuleType("ena_submission_toolkit")
+
+    class FakeCommon:
+        @staticmethod
+        def validate_hold_until(_hold_until):
+            return None
+
+        @staticmethod
+        def find_duplicates_by_alias_title(*_args, **_kwargs):
+            return {}
+
+        @staticmethod
+        def classify_duplicates(records, *_args, **_kwargs):
+            return [], records, []
+
+    toolkit.common = FakeCommon()
+    study_xml = b'<WEBIN><PROJECT alias="study-a"><TITLE>Study A</TITLE></PROJECT></WEBIN>'
+    toolkit.submit_study = types.SimpleNamespace(
+        build_manifest=lambda *_args, **_kwargs: study_xml,
+        validate_manifest=lambda *_args, **_kwargs: (
+            True,
+            ["XML is well-formed", "OK: PROJECT 'study-a' has required elements"],
+        ),
+        submit_manifest=lambda *_args, **_kwargs: (False, [], ["Study title is not unique"]),
+    )
+    monkeypatch.setitem(sys.modules, "ena_submission_toolkit", toolkit)
+
+    @contextmanager
+    def fake_webin_client(*_args, **_kwargs):
+        yield object()
+
+    monkeypatch.setattr(ena_service, "webin_client", fake_webin_client)
+    monkeypatch.setattr(ena_service._bootstrap, "xsd_dir", lambda: "/tmp/fake-xsd")
+
+    result = ena_service.submit_studies(
+        ena_service.Credentials(username="Webin-test", password="secret"),
+        [{"alias": "study-a", "TITLE": "Study A"}],
+        test=True,
+    )
+
+    assert result["success"] is False
+    assert result["error"] == "ENA rejected the study submission; see receipt messages in the log."
+    assert "INFO: Building ENA study XML manifest: action=ADD, records=1" in result["logs"]
+    assert f"INFO: Built ENA study XML manifest: bytes={len(study_xml)}" in result["logs"]
+    assert (
+        "INFO: Built native ENA project identity: "
+        "PROJECT[1]: alias='study-a', TITLE='Study A', NAME_present=False, DESCRIPTION_present=False"
+    ) in result["logs"]
+    assert "INFO: Validating study XML manifest against ENA.project.xsd" in result["logs"]
+    assert "INFO:   XML is well-formed" in result["logs"]
+    assert "INFO: XSD validation result: valid=True" in result["logs"]
+    assert "INFO: Pre-validation passed; submitting study XML to ENA (TEST)" in result["logs"]
+    assert "INFO: ENA receipt parsed: success=False, accession_records=0, message_count=1" in result["logs"]
+    assert "ERROR: Receipt: Study title is not unique" in result["logs"]
+    assert "ERROR: ENA receipt reported failure for the study submission" in result["logs"]
+
+
+def test_submit_studies_surfaces_warning_only_receipt_rejection(monkeypatch):
+    toolkit = types.ModuleType("ena_submission_toolkit")
+
+    class FakeCommon:
+        @staticmethod
+        def validate_hold_until(_hold_until):
+            return None
+
+        @staticmethod
+        def find_duplicates_by_alias_title(*_args, **_kwargs):
+            return {}
+
+        @staticmethod
+        def classify_duplicates(records, *_args, **_kwargs):
+            return [], records, []
+
+    toolkit.common = FakeCommon()
+    study_xml = b'<WEBIN><PROJECT alias="study-a"><TITLE>MIMICC</TITLE></PROJECT></WEBIN>'
+    toolkit.submit_study = types.SimpleNamespace(
+        build_manifest=lambda *_args, **_kwargs: study_xml,
+        validate_manifest=lambda *_args, **_kwargs: (True, []),
+        submit_manifest=lambda *_args, **_kwargs: (
+            False,
+            [],
+            ["WARNING: Study title 'MIMICC' is not sufficiently unique"],
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "ena_submission_toolkit", toolkit)
+
+    @contextmanager
+    def fake_webin_client(*_args, **_kwargs):
+        yield object()
+
+    monkeypatch.setattr(ena_service, "webin_client", fake_webin_client)
+    monkeypatch.setattr(ena_service._bootstrap, "xsd_dir", lambda: "/tmp/fake-xsd")
+
+    result = ena_service.submit_studies(
+        ena_service.Credentials(username="Webin-test", password="secret"),
+        [{"alias": "study-a", "TITLE": "MIMICC"}],
+        test=True,
+    )
+
+    assert result["success"] is False
+    assert "WARNING: Receipt: Study title 'MIMICC' is not sufficiently unique" in result["logs"]
+    assert result["error"] == "WARNING: Study title 'MIMICC' is not sufficiently unique"
+
+
+def test_submit_studies_reports_local_xsd_validation_failure(monkeypatch):
+    toolkit = types.ModuleType("ena_submission_toolkit")
+
+    class FakeCommon:
+        @staticmethod
+        def validate_hold_until(_hold_until):
+            return None
+
+    toolkit.common = FakeCommon()
+    toolkit.submit_study = types.SimpleNamespace(
+        build_manifest=lambda *_args, **_kwargs: b"<WEBIN></WEBIN>",
+        validate_manifest=lambda *_args, **_kwargs: (False, ["ERROR: PROJECT 'study-a' missing TITLE"]),
+    )
+    monkeypatch.setitem(sys.modules, "ena_submission_toolkit", toolkit)
+
+    @contextmanager
+    def fake_webin_client(*_args, **_kwargs):
+        yield object()
+
+    monkeypatch.setattr(ena_service, "webin_client", fake_webin_client)
+    monkeypatch.setattr(ena_service._bootstrap, "xsd_dir", lambda: "/tmp/fake-xsd")
+
+    result = ena_service.submit_studies(
+        ena_service.Credentials(username="Webin-test", password="secret"),
+        [{"alias": "study-a", "STUDY_TITLE": "Legacy title that should not be used"}],
+        test=True,
+    )
+
+    assert result["success"] is False
+    assert result["error"] == "Study XML failed local XSD validation; it was not submitted to ENA."
+    assert "WARNING:   record 1: missing recommended/required field(s): TITLE" in result["logs"]
+    assert "ERROR:   ERROR: PROJECT 'study-a' missing TITLE" not in result["logs"]
+    assert "ERROR: PROJECT 'study-a' missing TITLE" in result["logs"]
+    assert "ERROR: Study XML failed local XSD validation; it was not submitted to ENA." in result["logs"]
 
 
 async def test_sample_submit_includes_logs(client, with_creds, monkeypatch):

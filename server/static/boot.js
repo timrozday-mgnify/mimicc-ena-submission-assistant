@@ -7,20 +7,6 @@
 // section).
 // ---------------------------------------------------------------------------
 
-// Theme bootstrap (depends on applyTheme / propagateThemeToFrames / postToDhtb)
-const savedTheme = localStorage.getItem(THEME_KEY) || "system";
-$("themeSelect").value = savedTheme;
-applyTheme(savedTheme);
-
-$("themeSelect").onchange = (e) => {
-  localStorage.setItem(THEME_KEY, e.target.value);
-  applyTheme(e.target.value);
-};
-
-prefersLight.addEventListener("change", () => {
-  if ($("themeSelect").value === "system") applyTheme("system");
-});
-
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------

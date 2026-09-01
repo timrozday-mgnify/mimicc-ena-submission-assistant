@@ -53,7 +53,12 @@ async function helperApi(path, opts = {}) {
 
 function banner(id, ok, msg) {
   const el = $(id);
-  el.className = "banner " + (ok ? "ok" : "bad");
+  if (msg) {
+    el.className = "vf-banner vf-banner--alert " + (ok ? "vf-banner--success" : "vf-banner--danger");
+    el.style.display = "block";
+  } else {
+    el.style.display = "none";
+  }
   el.textContent = msg;
 }
 
@@ -68,17 +73,14 @@ function renderTable(containerId, rows) {
   el.innerHTML = h + "</tbody></table>";
 }
 
-function renderSampleSubmission(containerId, result) {
+function renderSubmissionResult(containerId, result) {
   const el = $(containerId);
   el.innerHTML = "";
 
-  const logs = Array.isArray(result.logs) ? result.logs : [];
-  if (logs.length) {
-    const pre = document.createElement("pre");
-    pre.className = "log";
-    pre.textContent = logs.join("\n");
-    el.appendChild(pre);
-  }
+  const pre = document.createElement("pre");
+  pre.className = "log";
+  pre.textContent = submissionLogText(result);
+  el.appendChild(pre);
 
   const rows = result.accessions || [];
   const tableSlot = document.createElement("div");
@@ -94,6 +96,36 @@ function renderSampleSubmission(containerId, result) {
     h += "<tr>" + cols.map((c) => `<td>${r[c] == null ? "" : String(r[c])}</td>`).join("") + "</tr>";
   }
   tableSlot.innerHTML = h + "</tbody></table>";
+}
+
+function renderSampleSubmission(containerId, result) {
+  renderSubmissionResult(containerId, result);
+}
+
+function submissionLogText(result) {
+  const logs = Array.isArray(result.logs) ? result.logs : [];
+  if (logs.length) return logs.join("\n");
+  if (result.error) return `ERROR: ${result.error}`;
+  return "No submission log lines returned.";
+}
+
+function renderSubmissionLog(containerId, result) {
+  const el = $(containerId);
+  if (el) el.textContent = submissionLogText(result);
+}
+
+function submissionFailureMessage(result, fallback = "Submission failed.") {
+  const logs = Array.isArray(result.logs) ? result.logs : [];
+  const diagnostic = [...logs].reverse().find((line) => /^(ERROR|WARNING):/.test(line));
+  if (diagnostic) {
+    return diagnostic
+      .replace(/^(ERROR|WARNING):\s*/, "")
+      .replace(/^Receipt:\s*/, "")
+      .replace(/^ERROR:\s*/, "");
+  }
+  if (result.error) return result.error;
+  if (logs.length) return "Submission failed; see the log for the last completed step.";
+  return fallback;
 }
 
 function togglePanelMax(panelId) {
@@ -123,24 +155,60 @@ function togglePanelMax(panelId) {
 }
 
 // ---------------------------------------------------------------------------
-// Tabs + env toggle
+// Stop a DataHarmonizer iframe from silently reclaiming keyboard focus once
+// the user has clicked elsewhere. Handsontable tracks its own "isListening"
+// state (a module-level `activeGuid`, set via `hot.listen()`) completely
+// decoupled from real DOM focus — outsideClickDeselects:false is set
+// deliberately upstream — and keeps re-asserting it via real focus/select
+// calls on its own elements (see dataharmonizer.js's
+// disableIframeFocusWhenInactive for exactly which APIs and why). Confirmed
+// via a live console focus log that this reclaim can happen with NO bubbling
+// "focusin" the parent document ever sees, so nothing here can react to it
+// after the fact — hence blocking those calls at the source instead.
+// `dataset.userActive` gates that blocking; it's turned OFF here (any
+// mousedown that doesn't land on a given iframe means the user has moved on
+// from it), but turned ON from *inside* that iframe's own document, in
+// disableIframeFocusWhenInactive — a capturing-phase listener on the iframe's
+// own `document` is guaranteed to run before Handsontable's own listener on
+// the same document, whereas the ordering between this (parent-document)
+// listener and the iframe's internal one is not guaranteed at all, and
+// turning it on from here was observed to lose that race (blocking
+// Handsontable's own legitimate selection setup and breaking editing).
 // ---------------------------------------------------------------------------
-document.querySelectorAll("nav button").forEach((b) => {
-  b.onclick = () => {
-    document.querySelectorAll("nav button").forEach((x) => x.classList.remove("active"));
-    document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
-    b.classList.add("active");
-    $("tab-" + b.dataset.tab).classList.add("active");
-  };
-});
+document.addEventListener("mousedown", (e) => {
+  const activeFrame = e.target.closest("iframe");
+  document.querySelectorAll(".dh-embed-frame").forEach((f) => {
+    if (f !== activeFrame) f.dataset.userActive = "0";
+  });
+}, true);
 
+// Handsontable's shortcut recorder (shortcuts/recorder.mjs `mount()`) walks
+// up the window hierarchy and attaches its own keydown/keyup listener
+// directly to every ANCESTOR window's `documentElement` too — i.e. it puts a
+// listener on THIS page's `documentElement`, from inside each DH iframe,
+// entirely deliberately (documented as supporting shortcuts while embedded).
+// It's gated only by Handsontable's own `isListening()` flag, which has no
+// public API to clear and is completely decoupled from real DOM focus, so a
+// key pressed in an ordinary field here (e.g. the sample filter input) can
+// still bubble up to that listener and get treated as a grid shortcut
+// (Enter advances a row, Backspace deletes a cell) even though the grid
+// never had real focus. Stopping propagation at `body` — one level below
+// `documentElement`, where Handsontable's listener actually lives — lets the
+// keystroke's target (and anything between it and `body`) see the event
+// normally, then keeps it from ever reaching that injected listener.
+document.body.addEventListener("keydown", (e) => e.stopImmediatePropagation());
+document.body.addEventListener("keyup", (e) => e.stopImmediatePropagation());
+
+// ---------------------------------------------------------------------------
+// Env toggle (tab switching handled by VF scripts.js via data-vf-js-tabs)
+// ---------------------------------------------------------------------------
 $("prodToggle").onchange = (e) => {
   TEST = !e.target.checked;
   const pill = $("envPill");
   pill.textContent = TEST ? "TEST" : "PRODUCTION";
-  pill.className = "pill " + (TEST ? "test" : "prod");
+  pill.className = "vf-badge " + (TEST ? "vf-badge--primary" : "vf-badge--secondary");
   if (!TEST && !confirm("Switch to PRODUCTION ENA service? Submissions will be permanent.")) {
-    e.target.checked = false; TEST = true; pill.textContent = "TEST"; pill.className = "pill test";
+    e.target.checked = false; TEST = true; pill.textContent = "TEST"; pill.className = "vf-badge vf-badge--primary";
   }
   scheduleSave();
 };

@@ -43,7 +43,7 @@ def page(live_server_url):
 def test_page_loads_with_tabs(page):
     assert "MIMICC ENA Submission Assistant" in page.title()
     for tab in ("Credentials", "Studies", "Samples", "Reads", "Records"):
-        assert page.query_selector(f"nav button:has-text('{tab}')")
+        assert page.query_selector(f"a.vf-tabs__link:has-text('{tab}')")
 
 
 def test_env_pill_default_test(page):
@@ -51,9 +51,12 @@ def test_env_pill_default_test(page):
 
 
 def test_tab_switching(page):
-    page.click("nav button:has-text('Reads')")
-    assert page.query_selector("#tab-reads").is_visible()
-    assert not page.query_selector("#tab-creds").is_visible()
+    page.click("a.vf-tabs__link:has-text('Reads')")
+    # VF JS assigns the section ID to the tab anchor too; target content sections by class position
+    sections = page.locator(".vf-tabs-content .vf-tabs__section")
+    reads_idx = 3  # 0=creds, 1=studies, 2=samples, 3=reads
+    assert sections.nth(reads_idx).is_visible()
+    assert not sections.nth(0).is_visible()  # creds section should be hidden
 
 
 def test_credentials_indicator(page):
@@ -61,7 +64,7 @@ def test_credentials_indicator(page):
     # them flips the indicator to "set".
     page.fill("#username", "Webin-test")
     page.fill("#password", "secret")
-    page.click("#tab-creds button:has-text('Save')")
+    page.click("#vf-tabs__section--creds button:has-text('Save')")
     page.wait_for_timeout(100)
     assert "set" in page.inner_text("#credStatus")
 
@@ -69,31 +72,144 @@ def test_credentials_indicator(page):
 def test_library_preset_ui_removed(page):
     # Experiment metadata now comes from its own DataHarmonizer panel, not a
     # hardcoded preset dropdown.
-    page.click("nav button:has-text('Reads')")
+    page.click("a.vf-tabs__link:has-text('Reads')")
     assert page.query_selector("#presetSelect") is None
     assert page.query_selector("#expDhPanel") is not None
 
 
+def test_study_submit_displays_submission_logs(page):
+    page.click("a.vf-tabs__link:has-text('Studies')")
+    assert page.locator("#studyLog.log").count() == 1
+    assert page.inner_text("#studyLog").strip() == "No study submission run yet."
+    assert page.locator("#vf-tabs__section--studies h3:has-text('Submission log')").count() == 1
+    page.evaluate(
+        """() => {
+            CREDS = { username: 'Webin-test', password: 'secret' };
+            window.__preparedStudies = [{ alias: "study-a", TITLE: "Study A" }];
+        }"""
+    )
+    page.route(
+        "**/api/study/submit",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=(
+                '{"success":false,"accessions":[],"error":"receipt rejected",'
+                '"logs":["INFO: XSD validation passed","ERROR: Receipt: invalid study"]}'
+            ),
+        ),
+    )
+
+    page.click("button:has-text('Submit prepared studies')")
+    page.wait_for_function("() => document.querySelector('#studyLog')?.innerText.includes('XSD validation passed')")
+    assert page.inner_text("#studyBanner").strip() == "invalid study"
+    assert "INFO: XSD validation passed" in page.inner_text("#studyLog")
+    assert "ERROR: Receipt: invalid study" in page.inner_text("#studyLog")
+    assert "No records." in page.inner_text("#studyOut")
+    assert page.evaluate("() => window.__lastStudySubmitResponse?.error") == "receipt rejected"
+
+
+def test_study_submit_without_prepared_records_logs_error(page):
+    page.click("a.vf-tabs__link:has-text('Studies')")
+    page.click("button:has-text('Submit prepared studies')")
+    page.wait_for_function("() => document.querySelector('#studyBanner')?.innerText.includes('No prepared studies')")
+    assert "No prepared studies" in page.inner_text("#studyBanner")
+    assert page.inner_text("#studyLog").strip() == "ERROR: No prepared studies. Click Prepare first."
+
+
+def test_study_submit_displays_log_area_when_response_has_no_logs(page):
+    page.click("a.vf-tabs__link:has-text('Studies')")
+    page.evaluate(
+        """() => {
+            CREDS = { username: 'Webin-test', password: 'secret' };
+            window.__preparedStudies = [{ alias: "study-a", TITLE: "Study A" }];
+        }"""
+    )
+    page.route(
+        "**/api/study/submit",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"success":false,"accessions":[],"error":"receipt rejected"}',
+        ),
+    )
+
+    page.click("button:has-text('Submit prepared studies')")
+    page.wait_for_function("() => document.querySelector('#studyLog')?.innerText.includes('receipt rejected')")
+    assert page.inner_text("#studyLog").strip() == "ERROR: receipt rejected"
+
+
+def test_study_prepare_displays_table_and_banner_in_prepare_panel(page):
+    page.click("a.vf-tabs__link:has-text('Studies')")
+    page.route(
+        "**/api/study/prepare",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"records":[{"alias":"study-a","TITLE":"Study A"}]}',
+        ),
+    )
+    # studyDhApi() is normally backed by the DH iframe; stub it directly so
+    # Prepare can run without a real DataHarmonizer bundle in this test.
+    page.evaluate("() => { studyDhApi = () => ({ getExportJson: () => ({}) }); }")
+    page.click("#vf-tabs__section--studies button:has-text('Prepare')")
+    page.wait_for_selector("#studyPrepOut table")
+    assert "study-a" in page.inner_text("#studyPrepOut")
+    assert "Prepared 1 study record(s)" in page.inner_text("#studyPrepBanner")
+    # The old shared banner must NOT pick up prepare feedback anymore.
+    assert page.inner_text("#studyBanner").strip() == ""
+
+
+def test_sample_prepare_displays_table_like_study(page):
+    page.click("a.vf-tabs__link:has-text('Samples')")
+    page.route(
+        "**/api/sample/prepare",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"records":[{"alias":"sample-a","TITLE":"Sample A"}],"count":1}',
+        ),
+    )
+    # No DH iframe is loaded in this test environment, so dhApi() returns
+    # null and Prepare falls back to the textarea, matching the documented
+    # "DataHarmonizer isn't available" path.
+    page.fill("#dhExport", '{"Container": {}}')
+    page.click("#vf-tabs__section--samples button:has-text('Prepare')")
+    page.wait_for_selector("#prepOut table")
+    assert "sample-a" in page.inner_text("#prepOut")
+    assert "Prepared 1 sample record(s)" in page.inner_text("#prepBanner")
+
+
+def test_iframe_loses_focus_on_outside_click(page):
+    page.click("a.vf-tabs__link:has-text('Samples')")
+    page.click("#dhFrame")
+    assert page.evaluate("() => document.activeElement.id") == "dhFrame"
+    page.click("#sampleFilter")
+    assert page.evaluate("() => document.activeElement.id") == "sampleFilter"
+    page.fill("#sampleFilter", "hello")
+    assert page.evaluate("() => $('sampleFilter').value") == "hello"
+
+
 def test_maximize_controls_for_reads_and_dataharmonizer(page):
-    page.click("nav button:has-text('Reads')")
+    page.click("a.vf-tabs__link:has-text('Reads')")
     page.click("#readsAssignPanel button[aria-label='Maximize panel']")
     assert "maximized" in page.get_attribute("#readsAssignPanel", "class")
     page.click("#readsAssignPanel button[aria-label='Minimize panel']")
     assert "maximized" not in page.get_attribute("#readsAssignPanel", "class")
 
-    page.click("nav button:has-text('Studies')")
+    page.click("a.vf-tabs__link:has-text('Studies')")
     page.click("#studyDhPanel button[aria-label='Maximize panel']")
     assert "maximized" in page.get_attribute("#studyDhPanel", "class")
     page.click("#studyDhPanel button[aria-label='Minimize panel']")
     assert "maximized" not in page.get_attribute("#studyDhPanel", "class")
 
-    page.click("nav button:has-text('Samples')")
+    page.click("a.vf-tabs__link:has-text('Samples')")
     page.click("#dhPanel button[aria-label='Maximize panel']")
     assert "maximized" in page.get_attribute("#dhPanel", "class")
     page.click("#dhPanel button[aria-label='Minimize panel']")
     assert "maximized" not in page.get_attribute("#dhPanel", "class")
 
-    page.click("nav button:has-text('Reads')")
+    page.click("a.vf-tabs__link:has-text('Reads')")
     page.click("#expDhPanel button[aria-label='Maximize panel']")
     assert "maximized" in page.get_attribute("#expDhPanel", "class")
     page.click("#expDhPanel button[aria-label='Minimize panel']")
@@ -101,7 +217,7 @@ def test_maximize_controls_for_reads_and_dataharmonizer(page):
 
 
 def test_reads_sample_assignment_and_row_delete(page):
-    page.click("nav button:has-text('Reads')")
+    page.click("a.vf-tabs__link:has-text('Reads')")
     page.evaluate("() => { CREDS = { username: 'Webin-test', password: 'secret' }; }")
     page.click("button:has-text('Load samples')")
     page.wait_for_selector("#readSampleList .sample-item")
@@ -138,7 +254,7 @@ def test_reads_sample_assignment_and_row_delete(page):
 
 def test_records_runs_and_experiments_views(page):
     page.evaluate("() => { CREDS = { username: 'Webin-test', password: 'secret' }; }")
-    page.click("nav button:has-text('Records')")
+    page.click("a.vf-tabs__link:has-text('Records')")
 
     page.select_option("#recEntity", "runs")
     page.click("button:has-text('Fetch')")
@@ -181,7 +297,7 @@ def _inject_fake_experiment_dh(page, rows):
 
 
 def test_reads_submit_merges_experiment_metadata(page):
-    page.click("nav button:has-text('Reads')")
+    page.click("a.vf-tabs__link:has-text('Reads')")
     page.evaluate(
         """() => {
             RUN_ROWS = [
@@ -238,7 +354,7 @@ def test_reads_submit_merges_experiment_metadata(page):
 
 
 def test_reads_submit_blocks_without_matching_experiment_row(page):
-    page.click("nav button:has-text('Reads')")
+    page.click("a.vf-tabs__link:has-text('Reads')")
     page.evaluate(
         """() => {
             RUN_ROWS = [
