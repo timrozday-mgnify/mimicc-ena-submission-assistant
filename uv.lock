@@ -378,8 +378,8 @@ wheels = [
 
 [[package]]
 name = "ena-api-client"
-version = "0.1.1"
-source = { git = "https://github.com/timrozday-mgnify/ena-api-client.git?rev=v0.1.1#5773ac4eb46d78de2cb99cec07c7000fde887329" }
+version = "0.1.2"
+source = { git = "https://github.com/timrozday-mgnify/ena-api-client.git?rev=v0.1.2#c1afd9a5152e3d642b6dc45bf1b47330e670179a" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
@@ -387,11 +387,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ena-api-handler"
+version = "3.0.0"
+source = { git = "https://github.com/EBI-Metagenomics/ena-api-handler.git?rev=v3.0.0#1abc3c6b3ef9d94308aea97f585f6498d323f897" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+
+[[package]]
 name = "ena-submission-toolkit"
-version = "0.1.0"
-source = { git = "https://github.com/timrozday-mgnify/ena-submission-toolkit.git?rev=v0.1.1#ef2e3e4c2711444869e8ae05953623fc4f5b6378" }
+version = "0.1.2"
+source = { git = "https://github.com/timrozday-mgnify/ena-submission-toolkit.git?rev=f928775f527c9295d1dd731eaca843b8fad96d65#f928775f527c9295d1dd731eaca843b8fad96d65" }
 dependencies = [
     { name = "ena-api-client" },
+    { name = "ena-api-handler" },
     { name = "httpx" },
     { name = "linkml-lib" },
     { name = "lxml" },
@@ -979,8 +989,8 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=5,<6" },
-    { name = "ena-api-client", git = "https://github.com/timrozday-mgnify/ena-api-client.git?rev=v0.1.1" },
-    { name = "ena-submission-toolkit", git = "https://github.com/timrozday-mgnify/ena-submission-toolkit.git?rev=v0.1.1" },
+    { name = "ena-api-client", git = "https://github.com/timrozday-mgnify/ena-api-client.git?rev=v0.1.2" },
+    { name = "ena-submission-toolkit", git = "https://github.com/timrozday-mgnify/ena-submission-toolkit.git?rev=f928775f527c9295d1dd731eaca843b8fad96d65" },
     { name = "gunicorn" },
     { name = "httpx" },
     { name = "linkml" },

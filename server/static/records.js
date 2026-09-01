@@ -24,10 +24,10 @@ function clearLog(id) {
   if (el) el.textContent = "";
 }
 
-async function loadRecords(entity, outId, status = "all", withActions = false) {
-  appendLog("recLog", `Fetching ${entity} (status=${status}, test=${TEST})…`);
+async function loadRecords(entity, outId, status = "all", withActions = false, fullFields = false) {
+  appendLog("recLog", `Fetching ${entity} (status=${status}, test=${TEST}, full_fields=${fullFields})…`);
   try {
-    const rows = await api(`/api/records/${entity}?test=${TEST}&status=${status}`);
+    const rows = await api(`/api/records/${entity}?test=${TEST}&status=${status}&full_fields=${fullFields}`);
     appendLog("recLog", `Got ${rows.length} ${entity} row(s).`);
     if (rows.length) {
       // Log every field actually present (not just the columns the table
@@ -50,7 +50,12 @@ async function loadRecords(entity, outId, status = "all", withActions = false) {
 function renderRecordsWithActions(outId, entity, rows) {
   const el = $(outId);
   if (!rows.length) { el.innerHTML = '<p class="muted" style="padding:10px">No records.</p>'; return; }
-  const cols = RECORD_COLUMNS[entity] || ["accession", "alias", "title", "status"].filter((c) => rows.some((r) => c in r));
+  // The known columns first, then whatever else the rows carry — with
+  // full_fields on that is every checklist attribute the samples were
+  // submitted with, and the point of asking for them is seeing them.
+  const known = RECORD_COLUMNS[entity] || ["accession", "alias", "title", "status"];
+  const extra = [...new Set(rows.flatMap((r) => Object.keys(r)))].filter((c) => !known.includes(c));
+  const cols = [...known.filter((c) => rows.some((r) => c in r)), ...extra];
   let h = "<table><thead><tr>" + cols.map((c) => `<th>${c}</th>`).join("") + "<th>actions</th></tr></thead><tbody>";
   rows.forEach((r) => {
     const acc = r.accession || r.secondary_accession || "";

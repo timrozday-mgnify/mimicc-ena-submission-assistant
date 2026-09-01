@@ -75,6 +75,18 @@ async def test_records_list_experiments(client, with_creds, monkeypatch):
     assert r.json() == rows
 
 
+async def test_records_list_passes_full_fields_through(client, with_creds, monkeypatch):
+    """The Reports API returns five columns; everything else (checklist
+    attributes, taxon, library) only arrives when the listing asks for it."""
+    seen: list[dict] = []
+    monkeypatch.setattr(ena_service, "list_records", lambda *a, **k: seen.append(k) or [])
+
+    await client.get("/api/records/samples?test=true")
+    await client.get("/api/records/samples?test=true&full_fields=true")
+
+    assert [k["full_fields"] for k in seen] == [False, True]
+
+
 async def test_records_unknown_entity(client, with_creds, monkeypatch):
     def boom(*a, **k):
         raise ValueError("Unknown entity 'frogs'")

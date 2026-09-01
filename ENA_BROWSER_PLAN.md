@@ -148,12 +148,18 @@ This is the only phase that touches the backend.
 3. New endpoint `POST /api/records/modify` in `server/views_records.py`:
    - Pydantic request model `{ entity, records: list[dict], test: bool }` where
      each record is the element's `after` object plus its accession.
-   - Delegate straight to `ena_service`, which calls the existing
-     `ena-submission-toolkit` `submit_study` / `submit_sample` builders with
-     `modify=True` — the MODIFY path already exists (`submit_studies(...,
-     modify=True)`); this endpoint reuses it rather than adding a new builder.
-   - Only studies and samples in this phase. Runs/experiments/analyses stay
-     read-only until there is a concrete need; say so in the UI.
+   - Delegate straight to `ena_submission_toolkit.records.modify_records()`,
+     which already does this generically for every entity: fetch the record's
+     current XML from the ENA Browser API, patch the edited fields into it,
+     resubmit as a MODIFY. Do **not** route this through the
+     `submit_study` / `submit_sample` builders with `modify=True` — a MODIFY
+     replaces the whole object, and a document rebuilt from a Reports row
+     silently drops everything ENA holds but does not report (a study's
+     description, a sample's attributes).
+   - `records.editable_columns(entity)` is the per-entity allow-list to feed
+     the grid's `editableColumns`; it is small on purpose (alias/title, alias
+     only for runs, nothing for files). Widening it is an entry in
+     `records._EDITABLE` plus a test, in the toolkit.
 4. On success: `clearChanges()`, then re-fetch so the grid shows ENA's state
    rather than the optimistic local one.
 5. On failure: surface the receipt messages in `recBanner` and `recLog`, and

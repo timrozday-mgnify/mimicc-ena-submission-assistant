@@ -19,9 +19,13 @@ dependencies = [
 
     # Pinned sibling packages (replaces scripts/vendor.sh's cp -R from ../<repo>).
     # Bump the tag here when a sibling repo cuts a new release.
-    "ena-api-client @ git+https://github.com/timrozday-mgnify/ena-api-client.git@v0.1.1",
+    # ena-submission-toolkit is pinned to a commit rather than a tag: the
+    # Browser-API field enrichment `ena_service.list_records(full_fields=...)`
+    # relies on is on main and has no release of its own yet. Move it back to a
+    # tag at the next one.
+    "ena-api-client @ git+https://github.com/timrozday-mgnify/ena-api-client.git@v0.1.2",
     "linkml-lib @ git+https://github.com/timrozday-mgnify/linkml-lib.git@v0.1.0",
-    "ena-submission-toolkit @ git+https://github.com/timrozday-mgnify/ena-submission-toolkit.git@v0.1.1",
+    "ena-submission-toolkit @ git+https://github.com/timrozday-mgnify/ena-submission-toolkit.git@f928775f527c9295d1dd731eaca843b8fad96d65",
 ]
 
 [build-system]

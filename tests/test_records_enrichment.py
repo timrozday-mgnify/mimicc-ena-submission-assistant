@@ -69,10 +69,16 @@ def test_coerce_preserves_unrecognised_fields_for_debugging():
 def test_list_records_surfaces_whatever_reports_proxy_returns(monkeypatch):
     """Run-lineage enrichment (study/sample accession via the run's experiment)
     now lives in ena_api.ReportsProxy.list_runs itself (see that library's own
-    test suite) — this just confirms ena_service.list_records is a thin
-    pass-through that doesn't drop or alter fields ReportsProxy already
-    enriched."""
+    test suite), and the listing call itself in
+    ena_submission_toolkit.records — this just confirms the path from a view
+    down to ReportsProxy is a thin pass-through that doesn't drop or alter
+    fields ReportsProxy already enriched."""
+    from ena_submission_toolkit import records
+
     reports = SimpleNamespace(
+        # A run listing also reads the run-processing report (see
+        # records._run_processing); nothing here is testing that.
+        list_run_processes=lambda **_kwargs: [],
         list_runs=lambda max_results: [
             _ReportRow(
                 {
@@ -91,7 +97,8 @@ def test_list_records_surfaces_whatever_reports_proxy_returns(monkeypatch):
     def fake_webin_client(creds, test):
         yield SimpleNamespace(reports=reports)
 
-    monkeypatch.setattr(ena_service, "webin_client", fake_webin_client)
+    # patched on the toolkit: that is where the ENA call is now made
+    monkeypatch.setattr(records, "webin_client", fake_webin_client)
 
     rows = ena_service.list_records(
         ena_service.Credentials(username="Webin-test", password="secret"),

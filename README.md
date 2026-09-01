@@ -33,7 +33,13 @@ New glue added here:
 - **DH → submission pipeline** — filter a DataHarmonizer export to sample fields
   and rename columns to ENA field names (the `submit_mimicc_samples.sh` flow).
 - **Account records browser** — list studies/samples/runs/experiments and run
-  lifecycle actions (release/hold/suppress/cancel). Planned to move onto the
+  lifecycle actions (release/hold/suppress/cancel). The **All fields** toggle
+  reads each record's full field set rather than the five columns the Webin
+  Reports API returns: every checklist attribute as submitted (from the ENA
+  Browser API — private records included, and it is the only source that works
+  against the test environment) plus, on production, the ENA Portal's ~200
+  indexed fields. It costs an extra request per 100 records, so it is off by
+  default. Planned to move onto the
   reusable [`ena-browser`](https://github.com/timrozday-mgnify/ena-browser)
   grid element — see "Record grids (ena-browser)" below and `ENA_BROWSER_PLAN.md`.
 
@@ -47,7 +53,7 @@ cache only and are never written to the database.
 Browser ── login cookie ──► Django server (server/config/, views_*.py)
    │                          ├── auth.py + orm/ ── Django ORM (accounts, sessions, reads ledger) → Postgres
    │                          ├── credentials_store.py ── per-user Webin creds, cache-backed (never DB)
-   │                          ├── ena_service.py ── ena-api-client submit_study/submit_sample (REST/XML, server-side)
+   │                          ├── ena_service.py ── ena-submission-toolkit (records/submit_study/submit_sample) ── ENA (REST/XML, server-side)
    │                          └── read_assign.py ── suggest + manifest text build
    │  fetch manifest + plan ◄─┘
    │  POST manifest + Webin creds
@@ -473,7 +479,8 @@ server/
   orm/                  Django app: models.py (User/LoginSession/SubmissionSession/ReadsRun), migrations/,
                         management/commands/bootstrap_admin.py
   dbsetup.py            one-time django.setup() bootstrap
-  ena_service.py        studies/samples/records/actions (wraps reused libraries, server-side REST)
+  ena_service.py        studies/samples/records/actions — MIMICC glue only; every ENA request is made by
+                        ena-submission-toolkit (records.py) over ena-api-client, never here
   read_assign.py        scan / suggest / manifest (text) build for reads
   session_store.py      submission sessions + reads ledger, Django-ORM-backed, owner-scoped
   schema_service.py     schema library: list/save/delete, ENA XML/XSD import/merge, grid selection

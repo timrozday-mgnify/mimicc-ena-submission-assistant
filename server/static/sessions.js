@@ -175,7 +175,7 @@ const _FIELD_IDS = [
   "studyHold", "sampleFilter", "sampleChecklist", "sampleHold",
   "defaultStudy", "recEntity", "recStatus", "dhExport", "readsLocalDir",
 ];
-const _CHECK_IDS = ["studyModify", "studyPublic", "sampleModify", "samplePublic", "forceReupload"];
+const _CHECK_IDS = ["studyModify", "studyPublic", "sampleModify", "samplePublic", "forceReupload", "recFullFields"];
 const _RESULT_IDS = ["studyPrepOut", "studyOut", "prepOut", "sampleOut", "recOut", "readsResults"];
 const _LOG_IDS = ["studyLog", "readsLog", "recLog"];
 
