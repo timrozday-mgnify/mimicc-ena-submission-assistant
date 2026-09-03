@@ -572,7 +572,7 @@ All sibling-repo code is pulled at a fixed git tag, never a local checkout or
   and attribute editing) as
   `name @ git+https://github.com/timrozday-mgnify/<repo>.git@<tag>` entries
   in `[project.dependencies]`.
-- **`Taskfile.yml`** — `ENA_BROWSER_REF` (v0.1.1), the `ena-browser` release whose
+- **`Taskfile.yml`** — `ENA_BROWSER_REF` (v0.1.2), the `ena-browser` release whose
   `ena-browser.iife.js` + `ena-browser.css` are vendored into
   `server/static/vendor/ena-browser/` and **committed**. Bump the ref, then
   `task vendor:ena-browser`, then commit the two files.

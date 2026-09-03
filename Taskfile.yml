@@ -13,7 +13,7 @@ tasks:
       Download the ena-browser IIFE bundle + CSS at ENA_BROWSER_REF into
       server/static/vendor/ena-browser/. Re-run after bumping the tag.
     vars:
-      ENA_BROWSER_REF: v0.1.1
+      ENA_BROWSER_REF: v0.1.2
     cmds:
       - mkdir -p server/static/vendor/ena-browser
       - for: ["ena-browser.iife.js", "ena-browser.css"]
