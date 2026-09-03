@@ -16,6 +16,10 @@ urlpatterns = [
     path("api/sample/submit", views_records.sample_submit),
     path("api/sample/list", views_records.sample_list),
     path("api/records/action", views_records.records_action),
+    # Before the <entity> catch-all below, which would otherwise swallow these.
+    path("api/records/modify/preview", views_records.records_modify_preview),
+    path("api/records/modify", views_records.records_modify),
+    path("api/records/<str:entity>/fields", views_records.records_fields),
     path("api/records/<str:entity>", views_records.records_list),
     path("api/reads/suggest", views_records.reads_suggest),
     path("api/reads/plan", views_records.reads_plan),

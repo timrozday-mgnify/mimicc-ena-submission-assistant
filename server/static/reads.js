@@ -145,7 +145,7 @@ function importPairingsTsv() {
       }
     });
     renderRunTable();
-    renderReadSampleList();
+    refreshAssignedCounts();
     syncPairingsToExperimentDh();
     banner("readsBanner", true, `Imported ${imported.length} pairing(s) — ${updated} updated, ${added} added.`);
     scheduleSave();
@@ -156,10 +156,6 @@ function importPairingsTsv() {
 
 function sampleAccession(sample) {
   return sample.accession || sample.secondary_accession || sample.external_accession || "";
-}
-
-function sampleLabel(sample) {
-  return sample.alias || sample.title || sampleAccession(sample) || "Unnamed sample";
 }
 
 function rowFileCount(row) {
@@ -175,56 +171,68 @@ function sampleAssignmentCount(accession) {
     .reduce((total, row) => total + rowFileCount(row), 0);
 }
 
-function renderReadSampleList() {
-  const el = $("readSampleList");
-  if (!el) return;
-  if (!READ_SAMPLES.length) {
-    el.innerHTML = '<p class="muted" style="padding:10px">Load samples to assign accessions.</p>';
-    return;
-  }
-
-  el.innerHTML = "";
+// The per-sample file count is this app's arithmetic, not the grid's: it is
+// derived from RUN_ROWS, so it has to follow every mutation of them.
+// setCustomValues patches those cells in place — no re-sort, no lost selection.
+function refreshAssignedCounts() {
+  const map = {};
   READ_SAMPLES.forEach((sample) => {
     const accession = sampleAccession(sample);
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "sample-item" + (accession === SELECTED_SAMPLE ? " selected" : "");
-    btn.disabled = !accession;
-    btn.onclick = () => {
-      SELECTED_SAMPLE = accession;
-      renderReadSampleList();
-    };
-
-    const main = document.createElement("div");
-    main.className = "sample-main";
-    const name = document.createElement("span");
-    name.className = "sample-name";
-    name.textContent = sampleLabel(sample);
-    const count = document.createElement("span");
-    count.className = "tag sample-count";
-    const assigned = sampleAssignmentCount(accession);
-    count.textContent = `${assigned} file${assigned === 1 ? "" : "s"}`;
-    main.append(name, count);
-
-    const acc = document.createElement("div");
-    acc.className = "sample-accession";
-    acc.textContent = accession || "No accession";
-    btn.append(main, acc);
-    el.appendChild(btn);
+    if (accession) map[accession] = sampleAssignmentCount(accession);
   });
+  $("pairSamples")?.setCustomValues("reads_assigned", map);
 }
 
 async function loadReadSamples() {
+  const params = new URLSearchParams({ test: String(TEST), status: "all" });
+  if ($("pairSearch").value.trim()) params.set("search", $("pairSearch").value.trim());
+  if ($("pairLinked").value.trim()) params.set("linked_to", $("pairLinked").value.trim());
   try {
-    const rows = await api(`/api/sample/list?test=${TEST}&status=all`);
-    READ_SAMPLES = rows;
+    READ_SAMPLES = await api(`/api/records/samples?${params}`);
     if (!READ_SAMPLES.some((sample) => sampleAccession(sample) === SELECTED_SAMPLE)) {
       SELECTED_SAMPLE = "";
     }
-    renderReadSampleList();
+
+    const grid = $("pairSamples");
+    grid.applyConfig({
+      entity: "samples",
+      mode: "read",
+      selectionMode: "single",
+      customColumns: PAIR_CUSTOM_COLUMNS,
+    });
+    applySavedGridLayout("pairing", "samples");
+    grid.setRows(READ_SAMPLES);
+    if (SELECTED_SAMPLE) grid.setSelection([SELECTED_SAMPLE]);
+    refreshAssignedCounts();
     banner("readsBanner", true, `Loaded ${READ_SAMPLES.length} sample(s).`);
+    scheduleSave();
   } catch (e) { banner("readsBanner", false, e.message); }
 }
+
+/** Keep SELECTED_SAMPLE and the grid's own selection from drifting apart —
+ *  everything outside the grid sets the selection through here. */
+function setSelectedSample(accession) {
+  SELECTED_SAMPLE = accession || "";
+  const grid = $("pairSamples");
+  if (!grid?.setSelection) return;
+  if (SELECTED_SAMPLE) grid.setSelection([SELECTED_SAMPLE]);
+  else grid.clearSelection();
+}
+
+// Declared up front, not just on load: refreshAssignedCounts() runs from
+// renderRunTable() too, and setCustomValues refuses a column the grid has not
+// been told about.
+const PAIR_CUSTOM_COLUMNS = [
+  { name: "reads_assigned", title: "Reads", type: "numeric", pinned: true, render: "badge" },
+];
+$("pairSamples").applyConfig({ customColumns: PAIR_CUSTOM_COLUMNS });
+
+// The only place a click sets SELECTED_SAMPLE. The pairing itself stays here:
+// the next click on a run row writes it into that row (see renderRunTable).
+$("pairSamples").addEventListener("ena-browser:selection-change", (e) => {
+  SELECTED_SAMPLE = e.detail.lastKey || "";
+  renderRunTable();   // re-applies the .assignable affordance
+});
 
 async function scanReads() {
   const dir = readsLocalDir();
@@ -249,7 +257,7 @@ async function suggestSamples() {
     r.groups.forEach((g, i) => { if (g.suggested_sample) { RUN_ROWS[i].SAMPLE = g.suggested_sample; RUN_ROWS[i].confidence = g.confidence; } });
     READ_SAMPLES = r.samples;
     renderRunTable();
-    renderReadSampleList();
+    refreshAssignedCounts();
     banner("readsBanner", true, `Auto-assigned ${r.groups.filter((g) => g.suggested_sample).length}/${r.groups.length} group(s).`);
     syncPairingsToExperimentDh();
     scheduleSave();
@@ -279,7 +287,7 @@ function renderRunTable() {
       RUN_ROWS[i].SAMPLE = SELECTED_SAMPLE;
       RUN_ROWS[i].confidence = "manual";
       renderRunTable();
-      renderReadSampleList();
+      refreshAssignedCounts();
       syncPairingsToExperimentDh();
       scheduleSave();
     };
@@ -294,7 +302,7 @@ function renderRunTable() {
       e.stopPropagation();
       RUN_ROWS.splice(i, 1);
       renderRunTable();
-      renderReadSampleList();
+      refreshAssignedCounts();
       scheduleSave();
     };
     removeTd.appendChild(removeBtn);
@@ -310,7 +318,7 @@ function renderRunTable() {
         inp.value = row[c] || "";
         inp.oninput = (e) => {
           RUN_ROWS[i][c] = e.target.value;
-          if (c === "SAMPLE" || c === "FASTQ" || c === "FASTQ1" || c === "FASTQ2") renderReadSampleList();
+          if (c === "SAMPLE" || c === "FASTQ" || c === "FASTQ1" || c === "FASTQ2") refreshAssignedCounts();
           if (c === "SAMPLE" || c === "NAME") syncPairingsToExperimentDh();
           scheduleSave();
         };
@@ -344,7 +352,7 @@ function renderRunTable() {
   const has = RUN_ROWS.length > 0;
   $("readsSubmitBtn").disabled = !has;
   $("readsValidateBtn").disabled = !has;
-  renderReadSampleList();
+  refreshAssignedCounts();
 }
 // Look up each pairing row's experiment metadata (by EXP_KEY_TITLE = NAME) in
 // the experiment DataHarmonizer grid and merge the EXP_FIELD_TITLES-mapped

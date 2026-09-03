@@ -51,6 +51,12 @@ async function helperApi(path, opts = {}) {
   return body;
 }
 
+// Record text comes from ENA, and manifests are XML — neither is safe to drop
+// into innerHTML raw.
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+}
+
 function banner(id, ok, msg) {
   const el = $(id);
   if (msg) {
@@ -152,7 +158,39 @@ function togglePanelMax(panelId) {
     }
   }
   document.body.classList.toggle("has-maximized-panel", !wasMaximized);
+  setTimeout(redrawGrids, 0);
 }
+
+// <ena-browser> renders nothing while its tab/panel has no layout, and exposes
+// no render(); setRows() re-renders, so bounce the rows through it.
+// ponytail: repaint-by-reset. If it ever costs measurably, ask ena-browser for
+// a public redraw() and use that instead.
+function redrawGrids(root = document) {
+  root.querySelectorAll("ena-browser").forEach((g) => {
+    if (g.getRows && g.offsetParent !== null) g.setRows(g.getRows());
+  });
+}
+
+// Handsontable focuses a hidden input as soon as a cell is pressed, and the
+// browser scrolls that input into view — which moves the whole grid under the
+// cursor (measured: ~140px) between mousedown and mouseup, so a click on one of
+// the grid's own row-action buttons never completes and the page jumps. Record
+// the page scroll on mousedown and put it back the moment that focus lands —
+// synchronously, since mouseup is next. The grid still scrolls internally.
+let _gridScroll = null;
+document.addEventListener("mousedown", (e) => {
+  _gridScroll = e.target.closest("ena-browser") ? { x: window.scrollX, y: window.scrollY } : null;
+}, true);
+document.addEventListener("focusin", (e) => {
+  if (!_gridScroll || !e.target.closest?.("ena-browser")) return;
+  window.scrollTo(_gridScroll.x, _gridScroll.y);
+  _gridScroll = null;
+}, true);
+
+// VF's scripts.js owns the tab switch; redraw after it has run.
+document.addEventListener("click", (e) => {
+  if (e.target.closest(".vf-tabs__link")) setTimeout(redrawGrids, 0);
+});
 
 // ---------------------------------------------------------------------------
 // Stop a DataHarmonizer iframe from silently reclaiming keyboard focus once
@@ -196,8 +234,11 @@ document.addEventListener("mousedown", (e) => {
 // `documentElement`, where Handsontable's listener actually lives — lets the
 // keystroke's target (and anything between it and `body`) see the event
 // normally, then keeps it from ever reaching that injected listener.
-document.body.addEventListener("keydown", (e) => e.stopImmediatePropagation());
-document.body.addEventListener("keyup", (e) => e.stopImmediatePropagation());
+// An <ena-browser> hosts its own in-page Handsontable, whose shortcut recorder
+// also sits on documentElement — so keys typed inside one have to get through.
+const _swallowKey = (e) => { if (!e.target.closest?.("ena-browser")) e.stopImmediatePropagation(); };
+document.body.addEventListener("keydown", _swallowKey);
+document.body.addEventListener("keyup", _swallowKey);
 
 // ---------------------------------------------------------------------------
 // Env toggle (tab switching handled by VF scripts.js via data-vf-js-tabs)

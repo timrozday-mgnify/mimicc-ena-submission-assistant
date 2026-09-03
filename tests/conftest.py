@@ -142,6 +142,11 @@ def live_server_url():
     original_validate_credentials = ena_service.validate_credentials
 
     def list_records(creds, entity, **kwargs):
+        if entity == "studies":
+            return [
+                {"alias": "studyA", "accession": "ERP111", "title": "Study A", "status": "PRIVATE"},
+                {"alias": "studyB", "accession": "ERP222", "title": "Study B", "status": "PRIVATE"},
+            ]
         if entity == "samples":
             return [
                 {"alias": "MIMICC_A_1", "accession": "ERS111", "title": "Sample A1", "status": "PRIVATE"},

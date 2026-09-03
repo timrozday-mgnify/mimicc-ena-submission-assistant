@@ -130,6 +130,9 @@ def list_records(
     *,
     test: bool,
     status: str = "all",
+    search: str = "",
+    linked_to: str = "",
+    unlinked: bool = False,
     full_fields: bool = False,
     max_results: int = 5000,
 ) -> list[dict[str, Any]]:
@@ -141,8 +144,53 @@ def list_records(
     alias, title and status. It costs extra requests, so it is opt-in per call.
     """
     return _records().list_records(
-        creds, entity, test=test, status=status, full_fields=full_fields, max_results=max_results
+        creds,
+        entity,
+        test=test,
+        status=status,
+        search=search,
+        linked_to=linked_to,
+        unlinked=unlinked,
+        full_fields=full_fields,
+        max_results=max_results,
     )
+
+
+def editable_columns(entity: str) -> list[str]:
+    """Columns the toolkit can turn into a MODIFY for this entity type."""
+    return _records().editable_columns(entity)
+
+
+def read_editable_fields(
+    creds: Credentials, entity: str, accessions: list[str], *, test: bool
+) -> dict[str, dict[str, Any]]:
+    """Current values of the editable fields, read from each record's own XML.
+
+    The Reports API answer does not carry them all (a run's title, an
+    experiment's library/instrument), so an edit grid has nothing to show
+    without this.
+    """
+    return _records().read_editable_fields(creds, entity, accessions, test=test)
+
+
+def preview_modify_records(
+    creds: Credentials, entity: str, records: list[dict[str, Any]], *, test: bool, submission_alias: str
+) -> dict[str, Any]:
+    """Build the MODIFY XML for a change set without submitting it."""
+    return _records().preview_modify_records(creds, entity, records, test=test, submission_alias=submission_alias)
+
+
+def modify_records(
+    creds: Credentials, entity: str, records: list[dict[str, Any]], *, test: bool, submission_alias: str
+) -> dict[str, Any]:
+    """Submit a change set as a MODIFY.
+
+    Not ``submit_studies``/``submit_samples`` with ``modify=True``: a MODIFY
+    replaces the whole object, and a document rebuilt from a Reports row would
+    silently drop everything ENA holds but does not report. The toolkit fetches
+    the record's current XML and patches it instead.
+    """
+    return _records().modify_records(creds, entity, records, test=test, submission_alias=submission_alias)
 
 
 def lookup_existing_runs(

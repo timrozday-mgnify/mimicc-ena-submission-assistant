@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap">
 <link rel="stylesheet" href="https://assets.emblstatic.net/vf/v2.5.28/css/styles.css">
 <link rel="stylesheet" href="https://ebi.emblstatic.net/web_guidelines/EBI-Icon-fonts/v1.3/fonts.css">
+<link rel="stylesheet" href="/static/vendor/ena-browser/ena-browser.css">
 <style>
   :root {
     --bg:#ffffff; --panel:#f5f5f5; --line:#d0d7de; --fg:#212121; --muted:#636c76;
@@ -39,14 +40,33 @@
   .vf-button--danger-override { background:var(--bad) !important; }
   .vf-button:disabled, .vf-button[disabled] { opacity:.5; cursor:not-allowed; pointer-events:none; }
   .actions { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; align-items:center; }
-  table { width:100%; border-collapse:collapse; font-size:12px; margin-top:10px; }
-  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
-  th { color:var(--muted); font-weight:600; }
-  td.wrap, th.wrap { white-space:normal; }
+  /* Scoped to this app's own tables: <ena-browser> renders Handsontable into
+     light DOM, so bare table/th/td rules would repaint its grid. */
+  .scroll table, #runTable { width:100%; border-collapse:collapse; font-size:12px; margin-top:10px; }
+  .scroll th, .scroll td, #runTable th, #runTable td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  .scroll th, #runTable th { color:var(--muted); font-weight:600; }
+  .scroll td.wrap, .scroll th.wrap { white-space:normal; }
   .scroll { overflow:auto; max-height:380px; border:1px solid var(--line); border-radius:6px; }
   .log-heading { margin-top:14px; }
   .log { background:#000; color:#c9d1d9; font-family:ui-monospace,Menlo,monospace; font-size:12px; padding:10px; border-radius:6px; min-height:96px; height:280px; overflow:auto; white-space:pre-wrap; }
   .muted { color:var(--muted); }
+  /* MODIFY manifests + submission log entries (Records tab) */
+  details.entry { border:1px solid var(--line); border-left-width:3px; border-radius:5px; margin-bottom:6px; background:var(--bg); }
+  details.entry > summary { cursor:pointer; padding:6px 10px; font-size:13px; }
+  details.entry.ok { border-left-color:var(--ok); }
+  details.entry.bad { border-left-color:var(--bad); }
+  details.entry .body { padding:0 10px 10px; font-size:13px; }
+  details.entry pre { background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:8px;
+                      overflow:auto; max-height:340px; font-size:12px; margin:8px 0 0; white-space:pre-wrap; word-break:break-word; }
+  .msg { margin:2px 0; font-family:ui-monospace,Menlo,monospace; font-size:12px; }
+  .msg.warn { color:var(--warn); }
+  .msg.bad { color:var(--bad); }
+  .fields { margin:4px 0 0; padding-left:18px; }
+  .state.warn { color:var(--warn); }
+  .state.bad { color:var(--bad); }
+  .state.ok { color:var(--ok); }
+  dialog { background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:8px; max-width:min(720px,90vw); }
+  dialog::backdrop { background:rgba(0,0,0,.5); }
   .dh-embed-wrap { width:100%; height:850px; min-height:200px; max-height:90vh; resize:vertical; overflow:auto;
             border:1px solid var(--line); border-radius:6px; }
   .panel:not(.maximized) #schemaEditorWrap { height:700px; }
@@ -62,17 +82,8 @@
   .subpanel { border:1px solid var(--line); border-radius:6px; padding:12px; margin-top:10px; background:var(--bg); }
   .dirlist a { color:var(--fg); text-decoration:none; display:block; padding:4px 6px; border-radius:4px; }
   .dirlist a:hover { background:var(--panel); }
-  .assign-grid { --assign-table-height:380px; display:grid; grid-template-columns:minmax(220px, 280px) minmax(0, 1fr); gap:12px; margin-top:12px; align-items:start; }
-  .assign-grid > .scroll, .sample-list { height:var(--assign-table-height); max-height:var(--assign-table-height); }
-  .sample-list { overflow:auto; border:1px solid var(--line); border-radius:6px; }
-  .sample-item { display:block; width:100%; text-align:left; background:transparent; color:var(--fg); border:0; border-bottom:1px solid var(--line);
-                 border-radius:0; padding:8px 10px; cursor:pointer; }
-  .sample-item:last-child { border-bottom:0; }
-  .sample-item:hover, .sample-item.selected { background:var(--panel); }
-  .sample-main { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-  .sample-name { font-weight:600; overflow-wrap:anywhere; }
-  .sample-accession { color:var(--muted); font-family:ui-monospace,Menlo,monospace; font-size:11px; overflow-wrap:anywhere; margin-top:2px; }
-  .sample-count { flex:0 0 auto; }
+  .assign-grid { --assign-table-height:380px; display:grid; grid-template-columns:minmax(320px, 460px) minmax(0, 1fr); gap:12px; margin-top:12px; align-items:start; }
+  .assign-grid > .scroll { height:var(--assign-table-height); max-height:var(--assign-table-height); }
   #runTable tbody tr.assignable { cursor:pointer; }
   #runTable tbody tr.assignable:hover { background:var(--panel); }
   .icon-btn { background:var(--btn2-bg); color:var(--btn2-fg); border:1px solid var(--line); border-radius:6px; padding:3px 7px; cursor:pointer; width:auto; }
@@ -92,7 +103,7 @@
   .panel.maximized .dh-embed-wrap { height:100%; max-height:none; resize:none; }
   .panel.maximized .assign-grid { --assign-table-height:100%; flex:1; min-height:0; }
   .panel.maximized .assign-grid > div, .panel.maximized .assign-grid > .scroll { min-height:0; }
-  .panel.maximized .sample-list, .panel.maximized .assign-grid > .scroll { height:100%; max-height:none; }
+  .panel.maximized .assign-grid > .scroll { height:100%; max-height:none; }
   @media (max-width: 820px) { .assign-grid { grid-template-columns:1fr; } }
   /* Logos: VF nav/logo components expect text; make images visible */
   .vf-logo__image { display:block; height:28px; width:auto; }
@@ -234,12 +245,18 @@
       </div>
       <div class="actions">
         <button class="vf-button vf-button--primary" onclick="submitStudies()">Submit prepared studies</button>
-        <button class="vf-button vf-button--secondary" onclick="loadRecords('studies','studyOut')">List my studies</button>
+        <button class="vf-button vf-button--secondary" onclick="refreshStudyGrid()">Refresh from ENA</button>
       </div>
       <div class="vf-banner vf-banner--alert" style="display:none" id="studyBanner"></div>
       <h3 class="log-heading">Submission log</h3>
       <pre class="log" id="studyLog">No study submission run yet.</pre>
       <div class="scroll" id="studyOut"></div>
+      <!-- The receipt above is what this submission did, failures included;
+           the grid below is what ENA now holds. Read-only: records change on
+           the Records tab, in one place. -->
+      <h3 class="log-heading">In ENA</h3>
+      <ena-browser id="studyGrid" entity="studies" mode="read" height="360"></ena-browser>
+      <p class="muted" id="studyGridEmpty">Submit studies (or click <b>Refresh from ENA</b>) to see them here.</p>
     </div>
   </section>
 
@@ -289,10 +306,15 @@
       </div>
       <div class="actions">
         <button class="vf-button vf-button--primary" id="sampleSubmitBtn" onclick="submitSamples()" disabled>Submit prepared samples</button>
-        <button class="vf-button vf-button--secondary" onclick="loadRecords('samples','sampleOut')">List my samples</button>
+        <button class="vf-button vf-button--secondary" onclick="refreshSampleGrid()">Refresh from ENA</button>
       </div>
       <div class="vf-banner vf-banner--alert" style="display:none" id="sampleBanner"></div>
       <div class="scroll" id="sampleOut"></div>
+      <!-- Receipt above, what ENA now holds below. Read-only: records change
+           on the Records tab. -->
+      <h3 class="log-heading">In ENA</h3>
+      <ena-browser id="sampleGrid" entity="samples" mode="read" height="360"></ena-browser>
+      <p class="muted" id="sampleGridEmpty">Submit samples (or click <b>Refresh from ENA</b>) to see them here.</p>
     </div>
   </section>
 
@@ -334,12 +356,16 @@
         </div>
         <div class="assign-grid">
           <div>
-            <div class="actions" style="margin-top:0">
+            <!-- Criteria on the fetch, to narrow to the right cohort before
+                 pairing; the grid's own column filters and sort do the rest. -->
+            <div class="row" style="margin-top:0">
+              <div><input class="vf-form__input" id="pairSearch" placeholder="search every column"></div>
+              <div><input class="vf-form__input" id="pairLinked" placeholder="linked to accession, e.g. PRJEB1234"></div>
+            </div>
+            <div class="actions" style="margin-top:8px">
               <button class="vf-button vf-button--secondary" onclick="loadReadSamples()">Load samples</button>
             </div>
-            <div class="sample-list" id="readSampleList" style="margin-top:10px">
-              <p class="muted" style="padding:10px">Load samples to assign accessions.</p>
-            </div>
+            <ena-browser id="pairSamples" entity="samples" mode="read" selection-mode="single" height="380"></ena-browser>
           </div>
           <div class="scroll"><table id="runTable"><thead></thead><tbody></tbody></table></div>
         </div>
@@ -444,6 +470,9 @@
   <section class="vf-tabs__section" id="vf-tabs__section--records">
     <div class="vf-card vf-card--bordered panel">
       <h2>Account records</h2>
+      <!-- Fetch criteria. These are criteria on the *request* (the toolkit
+           applies them server-side over what the Reports API returned); the
+           grid's own per-column filters are separate and client-side. -->
       <div class="row">
         <div><label class="vf-form__label">Entity</label><select class="vf-form__select" id="recEntity">
           <option value="studies">studies</option>
@@ -452,14 +481,52 @@
           <option value="experiments">experiments</option>
           <option value="analyses">analyses</option>
         </select></div>
+        <div><label class="vf-form__label">Search</label>
+          <input class="vf-form__input" id="recSearch" placeholder="search every column"></div>
+        <div><label class="vf-form__label">Linked to</label>
+          <input class="vf-form__input" id="recLinked" placeholder="accession, e.g. PRJEB1234"></div>
         <div><label class="vf-form__label">Status</label><select class="vf-form__select" id="recStatus">
           <option value="all">all</option><option value="private">private</option><option value="public">public</option>
         </select></div>
-        <div class="inline" style="align-self:flex-end" title="Also read each record's full field set — every checklist attribute it was submitted with (and, on production, the ENA Portal's indexed fields). Slower: an extra request per 100 records."><input type="checkbox" id="recFullFields"><label style="margin:0">all fields</label></div>
-        <div style="align-self:flex-end"><button class="vf-button vf-button--primary" onclick="loadRecords(document.getElementById('recEntity').value,'recOut',document.getElementById('recStatus').value,true,document.getElementById('recFullFields').checked)">Fetch</button></div>
+      </div>
+      <div class="actions">
+        <div class="inline"><input type="checkbox" id="recUnlinked"><label style="margin:0">unlinked only</label></div>
+        <div class="inline" title="Also read each record's full field set — every checklist attribute it was submitted with (and, on production, the ENA Portal's indexed fields). Slower: an extra request per 100 records."><input type="checkbox" id="recFullFields"><label style="margin:0">all fields</label></div>
+        <div class="inline" title="Edits and row actions are sent to ENA. Off on every page load."><input type="checkbox" id="recWrite"><label style="margin:0">write mode</label></div>
+        <button class="vf-button vf-button--secondary" type="button" id="recClear">Clear</button>
+        <button class="vf-button vf-button--primary" type="button" onclick="loadRecords()">Fetch</button>
+        <span class="muted" id="recCount"></span>
       </div>
       <div class="vf-banner vf-banner--alert" style="display:none" id="recBanner"></div>
-      <div class="scroll" id="recOut"></div>
+      <ena-browser id="recGrid" entity="studies" mode="read" height="600"></ena-browser>
+    </div>
+
+    <div class="vf-card vf-card--bordered panel">
+      <div class="panel-head">
+        <h2>MODIFY manifests</h2>
+        <span id="recManifestState" class="muted">no staged changes</span>
+        <button class="vf-button vf-button--secondary" type="button" id="recGenerate" disabled>Generate manifests</button>
+      </div>
+      <p id="recManifestEmpty" class="muted">
+        Nothing staged. Edit a cell in write mode, then generate the manifests — each one is the
+        exact XML document that would be sent to ENA, built from the record as ENA currently holds
+        it. Submission stays locked until the manifests for the current edits have been generated
+        here.
+      </p>
+      <div id="recManifests"></div>
+      <div class="actions">
+        <button class="vf-button vf-button--primary" type="button" id="recSubmit" disabled>Submit changes</button>
+      </div>
+    </div>
+
+    <div class="vf-card vf-card--bordered panel">
+      <div class="panel-head">
+        <h2>Submission log</h2>
+        <button class="icon-btn" type="button" id="recSubmitLogClear" title="Clear log" aria-label="Clear log">Clear</button>
+      </div>
+      <p class="muted">Everything this tab has sent to ENA, and everything ENA said back.</p>
+      <p id="recSubmitLogEmpty" class="muted">Nothing submitted from this tab yet.</p>
+      <div id="recSubmitLog"></div>
     </div>
     <div class="vf-card vf-card--bordered panel">
       <div class="panel-head">
@@ -475,6 +542,19 @@
 
 </div><!-- vf-tabs-content -->
 </main>
+<dialog id="recDiffDialog">
+  <form method="dialog">
+    <h3 style="margin-top:0">Submit these changes to ENA?</h3>
+    <p id="recDiffEnv" class="muted"></p>
+    <div class="scroll" style="max-height:50vh"><table id="recDiffTable"></table></div>
+    <div class="actions" style="justify-content:flex-end">
+      <button class="vf-button vf-button--secondary" value="cancel">Cancel</button>
+      <button class="vf-button vf-button--primary" value="ok">Submit</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/static/vendor/ena-browser/ena-browser.iife.js"></script>
 <script src="/static/core.js"></script>
 <script src="/static/theme.js"></script>
 <script src="/static/sessions.js"></script>

@@ -28,6 +28,9 @@ from pydantic import BaseModel, ValidationError
 STATUS_DONE = "done"
 STATUS_ALREADY_IN_ENA = "already_in_ena"
 
+# Submission alias for MODIFYs from this app, so they are identifiable in ENA.
+MODIFY_ALIAS = "mimicc-assistant-modify"
+
 
 def _slug(text: str) -> str:
     """Filesystem/alias-safe slug: keep word chars, collapse the rest to '-'."""
@@ -45,6 +48,9 @@ def _list_params(request: HttpRequest) -> dict[str, Any]:
     return {
         "test": request.GET.get("test", "true").lower() != "false",
         "status": request.GET.get("status", "all"),
+        "search": request.GET.get("search", "").strip(),
+        "linked_to": request.GET.get("linked_to", "").strip(),
+        "unlinked": request.GET.get("unlinked") == "true",
         "full_fields": request.GET.get("full_fields", "false").lower() == "true",
         "max_results": int(request.GET.get("max_results", 5000)),
     }
@@ -89,6 +95,22 @@ class ActionRequest(BaseModel):
     test: bool = True
     alias: str | None = None
     hold_until: str | None = None
+
+
+class FieldsRequest(BaseModel):
+    accessions: list[str]
+    test: bool = True
+
+
+class ModifyRecord(BaseModel):
+    accession: str
+    changes: dict[str, Any]
+
+
+class ModifyRequest(BaseModel):
+    entity: str
+    records: list[ModifyRecord]
+    test: bool = True
 
 
 class SuggestRequest(BaseModel):
@@ -276,6 +298,58 @@ def records_action(request: HttpRequest) -> JsonResponse:
         )
     except ValueError as exc:
         return JsonResponse({"detail": str(exc)}, status=400)
+
+
+def records_fields(request: HttpRequest, entity: str) -> JsonResponse:
+    """Current values of the editable fields for the given accessions."""
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+    creds, err = webin_creds.from_request(request)
+    if err:
+        return err
+    try:
+        req = _parse(FieldsRequest, request)
+    except (ValidationError, json.JSONDecodeError) as exc:
+        return JsonResponse({"detail": str(exc)}, status=422)
+    try:
+        fields = ena_service.read_editable_fields(creds, entity, req.accessions, test=req.test)
+    except ValueError as exc:
+        return JsonResponse({"detail": str(exc)}, status=400)
+    except Exception as exc:  # noqa: BLE001 - surface it; a Django 500 page shows the UI nothing
+        return JsonResponse({"detail": f"{type(exc).__name__}: {exc}"}, status=502)
+    return JsonResponse({"fields": fields})
+
+
+def _modify(request: HttpRequest, *, submit: bool) -> JsonResponse:
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+    creds, err = webin_creds.from_request(request)
+    if err:
+        return err
+    try:
+        req = _parse(ModifyRequest, request)
+    except (ValidationError, json.JSONDecodeError) as exc:
+        return JsonResponse({"detail": str(exc)}, status=422)
+    records = [r.model_dump() for r in req.records]
+    call = ena_service.modify_records if submit else ena_service.preview_modify_records
+    try:
+        result = call(creds, req.entity, records, test=req.test, submission_alias=MODIFY_ALIAS)
+    except ValueError as exc:
+        return JsonResponse({"detail": str(exc)}, status=400)
+    except Exception as exc:  # noqa: BLE001 - surface it; a Django 500 page shows the UI nothing
+        return JsonResponse({"detail": f"{type(exc).__name__}: {exc}"}, status=502)
+    return JsonResponse(result)
+
+
+def records_modify_preview(request: HttpRequest) -> JsonResponse:
+    return _modify(request, submit=False)
+
+
+def records_modify(request: HttpRequest) -> JsonResponse:
+    # No server-side read-only switch (ena-browser-ui has one): this app exists
+    # to submit. Write mode is an explicit per-session opt-in in the UI instead,
+    # and lifecycle actions keep confirming as they already do.
+    return _modify(request, submit=True)
 
 
 # ---------------------------------------------------------------------------

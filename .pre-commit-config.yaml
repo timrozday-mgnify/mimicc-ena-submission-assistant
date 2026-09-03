@@ -1,3 +1,8 @@
+# Vendored build artefacts (the ena-browser bundle, like the DataHarmonizer
+# one) are committed as-is: reformatting them corrupts them, and the size
+# ceiling is not theirs to meet.
+exclude: '^server/static/vendor/'
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

@@ -164,6 +164,9 @@ async function openSession(id) {
     await applyState(data);                 // resetToBlank() clears READS_RUNS…
     READS_RUNS = data.reads_runs || {};     // …so restore the resume ledger after.
     renderRunTable();
+    // Grid rows are never saved, so a restored session re-fetches them — with
+    // the saved arrangement already applied (applySavedGridLayout).
+    if (SAVED_GRIDS.records && CREDS.username) loadRecords();
     setSessionSaved(data.session.updated_at);
   } catch (e) { banner("sessionBanner", false, e.message); }
 }
@@ -173,11 +176,68 @@ async function openSession(id) {
 // interactive state (run rows, samples, prepared records) is captured as data.
 const _FIELD_IDS = [
   "studyHold", "sampleFilter", "sampleChecklist", "sampleHold",
-  "defaultStudy", "recEntity", "recStatus", "dhExport", "readsLocalDir",
+  "defaultStudy", "recEntity", "recStatus", "recSearch", "recLinked", "dhExport", "readsLocalDir",
 ];
-const _CHECK_IDS = ["studyModify", "studyPublic", "sampleModify", "samplePublic", "forceReupload", "recFullFields"];
-const _RESULT_IDS = ["studyPrepOut", "studyOut", "prepOut", "sampleOut", "recOut", "readsResults"];
+// recWrite is deliberately absent: write mode is never restored from a session.
+const _CHECK_IDS = ["studyModify", "studyPublic", "sampleModify", "samplePublic", "forceReupload",
+                    "recFullFields", "recUnlinked"];
+// Receipt tables only. A record grid (#recGrid) is an <ena-browser>, whose
+// serialized innerHTML restores as dead DOM — its layout is persisted instead.
+const _RESULT_IDS = ["studyPrepOut", "studyOut", "prepOut", "sampleOut", "readsResults"];
 const _LOG_IDS = ["studyLog", "readsLog", "recLog"];
+
+// --- Record grids -----------------------------------------------------------
+// Only what the user arranged — column order, pins, hidden columns, widths and
+// filters. Never the rows: a restored row shows the status it had when it was
+// saved, which after a release or a suppress is the wrong one. Rows are
+// re-fetched instead.
+const _GRID_IDS = {
+  records: "recGrid", studyOut: "studyGrid", sampleOut: "sampleGrid", pairing: "pairSamples",
+};
+
+let SAVED_GRIDS = {};
+
+function collectGrids() {
+  const out = {};
+  for (const [key, id] of Object.entries(_GRID_IDS)) {
+    const grid = $(id);
+    if (!grid?.getLayout) continue;
+    out[key] = { layout: grid.getLayout(), filters: grid.getFilters() };
+  }
+  if (out.records) out.records.entity = $("recEntity").value;
+  if (out.studyOut) out.studyOut.entity = "studies";
+  if (out.sampleOut) out.sampleOut.entity = "samples";
+  if (out.pairing) out.pairing.entity = "samples";
+  return out;
+}
+
+/** Apply a session's saved arrangement to a grid, before its rows arrive: a
+ *  column the grid first meets in the data arrives hidden, and that sticks. A
+ *  layout saved for one entity says nothing about another's columns, so it is
+ *  only applied to the entity it came from. */
+function applySavedGridLayout(key, entity) {
+  const saved = SAVED_GRIDS[key];
+  const grid = $(_GRID_IDS[key]);
+  if (!saved || !grid?.setLayout) return;
+  if (saved.entity && entity && saved.entity !== entity) return;
+  if (saved.layout) grid.setLayout(saved.layout);
+  if (saved.filters?.length) grid.setFilters(saved.filters);
+}
+
+function clearGrids() {
+  SAVED_GRIDS = {};
+  for (const id of Object.values(_GRID_IDS)) {
+    const grid = $(id);
+    if (!grid?.setRows) continue;
+    grid.clearSelection();
+    grid.setRows([]);
+    // The arrangement is session state too — an empty layout drops back to the
+    // entity's own defaults, so the next session does not inherit this one's
+    // pinned/hidden columns or filters.
+    grid.setFilters([]);
+    grid.setLayout({ order: [], pinned: [], hidden: [], widths: {} });
+  }
+}
 
 // Pristine, blank-slate values for every field/check/result/log, captured
 // once at page load (before any session is applied) — see init(). Used to
@@ -207,7 +267,7 @@ function collectState() {
   const logs = {};
   _LOG_IDS.forEach((id) => { logs[id] = $(id).textContent; });
   return {
-    v: 1, test: TEST, fields, checks, resultsHtml, logs,
+    v: 2, test: TEST, fields, checks, resultsHtml, logs, grids: collectGrids(),
     runRows: RUN_ROWS, readSamples: READ_SAMPLES, selectedSample: SELECTED_SAMPLE,
     prepared: window.__prepared || null,
     preparedStudies: window.__preparedStudies || null,
@@ -227,14 +287,15 @@ function resetToBlank() {
   Object.entries(d.resultsHtml).forEach(([id, html]) => { if ($(id) != null) $(id).innerHTML = html; });
   Object.entries(d.logs).forEach(([id, txt]) => { if ($(id) != null) $(id).textContent = txt; });
 
+  clearGrids();
   RUN_ROWS = [];
   READ_SAMPLES = [];
-  SELECTED_SAMPLE = "";
+  setSelectedSample("");
   READS_RUNS = {};
   window.__prepared = undefined;
   window.__preparedStudies = undefined;
   renderRunTable();
-  renderReadSampleList();
+  refreshAssignedCounts();
   $("sampleSubmitBtn").disabled = true;
 
   setDhSavedIndicator(null);
@@ -270,13 +331,14 @@ async function applyState(data) {
     Object.entries(st.resultsHtml || {}).forEach(([id, html]) => { if ($(id) != null) $(id).innerHTML = html; });
     Object.entries(st.logs || {}).forEach(([id, txt]) => { if ($(id) != null) $(id).textContent = txt; });
     // Interactive state
+    SAVED_GRIDS = st.grids || {};
     RUN_ROWS = st.runRows || [];
     READ_SAMPLES = st.readSamples || [];
-    SELECTED_SAMPLE = st.selectedSample || "";
+    setSelectedSample(st.selectedSample || "");
     window.__prepared = st.prepared || undefined;
     window.__preparedStudies = st.preparedStudies || undefined;
     renderRunTable();
-    renderReadSampleList();
+    refreshAssignedCounts();
     $("sampleSubmitBtn").disabled = !(window.__prepared && window.__prepared.length);
     // DataHarmonizer grid: load saved export into the textarea + the grid
     // (reloadDhFrame() above already reset it to blank; this repopulates it

@@ -65,5 +65,12 @@ def health(request: HttpRequest) -> JsonResponse:
             "dh_available": any(DH_DIR.iterdir()),
             "default_sample_filter": ena_service.DEFAULT_SAMPLE_FILTER,
             "dhtb_url": _DHTB_URL,
+            # The server builds the MODIFY XML, so it is the authority on what
+            # is editable — the page reads this instead of hard-coding a list.
+            "editable_columns": {
+                e: ena_service.editable_columns(e)
+                for e in ("studies", "samples", "runs", "experiments", "analyses", "files")
+            },
+            "ena_browser_available": (STATIC_DIR / "vendor" / "ena-browser" / "ena-browser.iife.js").is_file(),
         }
     )

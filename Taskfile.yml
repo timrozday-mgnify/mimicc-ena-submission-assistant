@@ -8,6 +8,19 @@ version: "3"
 # compose invocation here needs DOCKER_DEFAULT_PLATFORM unset. These tasks do
 # that for you instead of requiring `env -u DOCKER_DEFAULT_PLATFORM ...` by hand.
 tasks:
+  vendor:ena-browser:
+    desc: >
+      Download the ena-browser IIFE bundle + CSS at ENA_BROWSER_REF into
+      server/static/vendor/ena-browser/. Re-run after bumping the tag.
+    vars:
+      ENA_BROWSER_REF: v0.1.1
+    cmds:
+      - mkdir -p server/static/vendor/ena-browser
+      - for: ["ena-browser.iife.js", "ena-browser.css"]
+        cmd: >
+          curl -fsSL -o server/static/vendor/ena-browser/{{.ITEM}}
+          https://github.com/timrozday-mgnify/ena-browser/releases/download/{{.ENA_BROWSER_REF}}/{{.ITEM}}
+
   test:
     desc: Run the pytest suite (API + read-assignment unit tests, no Docker)
     cmds:

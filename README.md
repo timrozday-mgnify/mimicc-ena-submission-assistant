@@ -359,8 +359,27 @@ grid.addEventListener("ena-browser:row-action", (e) => recAction(e.detail.action
 
 Theming needs no wiring: the element reads the same CSS custom properties this app
 already defines (`--bg`, `--panel`, `--line`, `--fg`, `--muted`, `--accent`, …) and
-honours `data-theme`, so the header's light/dark switch drives it — unlike the
-DataHarmonizer iframes, which need `propagateThemeToFrames()`.
+honours `data-theme`. This app is light-only and stamps `data-theme="light"` on
+`<html>` so a dark OS setting cannot give a dark grid inside a white page. Adding a
+real light/dark switch later is a `:root[data-theme="dark"]` palette block plus a
+header control that rewrites that attribute — the element follows with no extra
+wiring, unlike the DataHarmonizer iframes, which need `propagateThemeToFrames()`.
+
+Refresh the vendored bundle with `task vendor:ena-browser` after bumping
+`ENA_BROWSER_REF` in `Taskfile.yml`; the two downloaded files are committed (like
+the DataHarmonizer bundle) so image builds and the Playwright suites need no
+network fetch.
+
+**Deliberately not ported from `ena-browser-ui`:** the Portal "all of ENA
+(read-only)" source, undo/redo, and the change-history stack. They serve a
+browsing app rather than a submission workflow, and each is independently
+addable later.
+
+Submitting an edit is gated: a MODIFY replaces the whole record in ENA, so
+**Submit changes** stays locked until the exact XML for the current edits has
+been built by *Generate manifests* and shown — and any further edit re-locks it.
+Write mode itself is a per-session checkbox (`#recWrite`), off on every load and
+never restored from a saved session.
 
 The step-by-step adoption plan (including which Playwright tests change) is in
 [`ENA_BROWSER_PLAN.md`](ENA_BROWSER_PLAN.md).

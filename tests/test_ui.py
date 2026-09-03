@@ -7,6 +7,7 @@ Playwright (and its browsers) are not installed.
 
 from __future__ import annotations
 
+import json
 import time
 
 import pytest
@@ -216,12 +217,30 @@ def test_maximize_controls_for_reads_and_dataharmonizer(page):
     assert "maximized" not in page.get_attribute("#expDhPanel", "class")
 
 
+def _load_pairing_samples(page):
+    page.click("button:has-text('Load samples')")
+    page.wait_for_function("() => document.getElementById('pairSamples').getRows().length > 0")
+
+
+def _assigned_count(page, accession):
+    """The reads_assigned badge, read through the element's rendered cell."""
+    return page.evaluate(
+        """(acc) => {
+            const grid = document.getElementById('pairSamples');
+            const index = grid.getRows().findIndex((row) => row.accession === acc);
+            const cell = document.querySelectorAll(
+                '#pairSamples .ht_clone_inline_start td.ena-browser-badge')[index];
+            return cell ? cell.innerText.trim() : null;
+        }""",
+        accession,
+    )
+
+
 def test_reads_sample_assignment_and_row_delete(page):
     page.click("a.vf-tabs__link:has-text('Reads')")
     page.evaluate("() => { CREDS = { username: 'Webin-test', password: 'secret' }; }")
-    page.click("button:has-text('Load samples')")
-    page.wait_for_selector("#readSampleList .sample-item")
-    assert "0 files" in page.inner_text("#readSampleList")
+    _load_pairing_samples(page)
+    assert page.evaluate("() => document.getElementById('pairSamples').getRows().length") == 2
 
     page.evaluate(
         """() => {
@@ -241,42 +260,275 @@ def test_reads_sample_assignment_and_row_delete(page):
         }"""
     )
 
-    page.click("#readSampleList .sample-item:has-text('MIMICC_A_1')")
+    # Selecting through the element's API and by a real click must both reach
+    # SELECTED_SAMPLE — it is the only thing the run-row click reads.
+    page.evaluate("() => document.getElementById('pairSamples').setSelection(['ERS222'])")
+    assert page.evaluate("() => SELECTED_SAMPLE") == "ERS222"
+    page.locator("#pairSamples .ht_master td", has_text="ERS111").first.click()
+    page.wait_for_function("() => SELECTED_SAMPLE === 'ERS111'")
+
     page.click("#runTable tbody tr:first-child td.wrap")
     first_sample = page.locator("#runTable tbody tr").nth(0).locator("input").nth(1)
     assert first_sample.input_value() == "ERS111"
-    assert "2 files" in page.inner_text("#readSampleList .sample-item:has-text('MIMICC_A_1')")
+    assert _assigned_count(page, "ERS111") == "2"
 
     page.click("#runTable tbody tr:first-child .icon-btn")
     assert page.locator("#runTable tbody tr").count() == 1
-    assert "0 files" in page.inner_text("#readSampleList .sample-item:has-text('MIMICC_A_1')")
+    assert _assigned_count(page, "ERS111") == "0"
+
+
+def test_reads_pairing_selection_survives_a_filter(page):
+    page.click("a.vf-tabs__link:has-text('Reads')")
+    page.evaluate("() => { CREDS = { username: 'Webin-test', password: 'secret' }; }")
+    _load_pairing_samples(page)
+
+    page.evaluate("() => document.getElementById('pairSamples').setSelection(['ERS111'])")
+    page.evaluate(
+        """() => document.getElementById('pairSamples')
+            .setFilters([{ column: 'accession', operator: 'eq', value: 'ERS111' }])"""
+    )
+    assert page.evaluate("() => document.getElementById('pairSamples').getVisibleRows().length") == 1
+    assert page.evaluate("() => document.getElementById('pairSamples').getSelection()") == ["ERS111"]
+    assert page.evaluate("() => SELECTED_SAMPLE") == "ERS111"
+
+
+def _fetch_records(page, entity):
+    """Fetch one entity into the grid and wait for the rows to land."""
+    page.select_option("#recEntity", entity)
+    page.click("button:has-text('Fetch')")
+    page.wait_for_function(
+        "() => document.getElementById('recGrid').getRows().length > 0",
+    )
+    return page.evaluate("() => document.getElementById('recGrid').getRows()")
 
 
 def test_records_runs_and_experiments_views(page):
+    """The grid is fed the rows the API returned, linking accessions included.
+
+    Asserted through the element's public API — the grid's own rendering,
+    filtering and sorting are ena-browser's Playwright suite, not this one's.
+    """
     page.evaluate("() => { CREDS = { username: 'Webin-test', password: 'secret' }; }")
     page.click("a.vf-tabs__link:has-text('Records')")
 
-    page.select_option("#recEntity", "runs")
-    page.click("button:has-text('Fetch')")
-    page.wait_for_selector("#recOut table")
-    headers = page.inner_text("#recOut thead")
-    body = page.inner_text("#recOut tbody")
-    assert "experiment_accession" in headers
-    assert "study_accession" in headers
-    assert "sample_accession" in headers
-    assert "ERX111" in body
-    assert "ERP111" in body
-    assert "ERS111" in body
+    rows = _fetch_records(page, "runs")
+    assert rows[0]["experiment_accession"] == "ERX111"
+    assert rows[0]["study_accession"] == "ERP111"
+    assert rows[0]["sample_accession"] == "ERS111"
 
-    page.select_option("#recEntity", "experiments")
-    page.click("button:has-text('Fetch')")
-    page.wait_for_function("() => document.querySelector('#recOut thead')?.innerText.includes('sample_accession')")
-    headers = page.inner_text("#recOut thead")
-    body = page.inner_text("#recOut tbody")
-    assert "study_accession" in headers
-    assert "sample_accession" in headers
-    assert "ERP111" in body
-    assert "ERS111" in body
+    rows = _fetch_records(page, "experiments")
+    assert rows[0]["accession"] == "ERX111"
+    assert rows[0]["sample_accession"] == "ERS111"
+
+
+def test_records_criteria_reach_the_request(page):
+    """The fetch criteria are request criteria — they go on the query string."""
+    page.evaluate("() => { CREDS = { username: 'Webin-test', password: 'secret' }; }")
+    page.click("a.vf-tabs__link:has-text('Records')")
+
+    seen = []
+    page.on("request", lambda r: seen.append(r.url) if "/api/records/samples?" in r.url else None)
+    page.fill("#recSearch", "MIMICC")
+    page.fill("#recLinked", "PRJEB1234")
+    page.check("#recUnlinked")
+    _fetch_records(page, "samples")
+
+    assert "search=MIMICC" in seen[-1]
+    assert "linked_to=PRJEB1234" in seen[-1]
+    assert "unlinked=true" in seen[-1]
+
+
+def _enable_write(page):
+    """Tick write mode. It confirms first (edits go to ENA), so accept that."""
+    page.on("dialog", lambda dialog: dialog.accept())
+    page.check("#recWrite")
+
+
+def test_records_row_action_posts_accession(page):
+    """A row-action button the element renders reaches /api/records/action."""
+    page.evaluate("() => { CREDS = { username: 'Webin-test', password: 'secret' }; }")
+    posted = []
+
+    def handle(route):
+        posted.append(route.request.post_data_json)
+        route.fulfill(status=200, content_type="application/json", body='{"success": true, "messages": "released"}')
+
+    page.route("**/api/records/action", handle)
+    page.click("a.vf-tabs__link:has-text('Records')")
+    _enable_write(page)  # row actions only exist in write mode
+    _fetch_records(page, "samples")
+
+    # The frozen-column clone is the copy on top; the master one under it is
+    # covered by design. Clicking it is also the regression test for the page
+    # scroll pinning in core.js — without it the grid slides out from under the
+    # cursor between mousedown and mouseup and the click never lands.
+    page.locator("ena-browser#recGrid .ht_clone_inline_start button:has-text('Release')").first.click()
+    page.wait_for_timeout(300)
+
+    assert posted, "no lifecycle action was posted"
+    assert posted[0]["action"] == "release"
+    assert posted[0]["accession"] == "ERS111"
+
+
+def _edit_title(page, current, text):
+    """Type into a grid cell — also the regression test for the narrowed
+    keyboard swallower (core.js): without it Handsontable gets no keys at all."""
+    page.locator("ena-browser#recGrid td", has_text=current).first.dblclick()
+    page.keyboard.press("ControlOrMeta+a")
+    page.keyboard.type(text)
+    page.keyboard.press("Enter")
+    page.wait_for_function(
+        "() => document.getElementById('recGrid').getChangeSet().rows.length > 0",
+    )
+
+
+def test_records_edit_lands_in_the_change_set(page):
+    page.evaluate("() => { CREDS = { username: 'Webin-test', password: 'secret' }; }")
+    page.route(
+        "**/api/records/samples/fields",
+        lambda route: route.fulfill(status=200, content_type="application/json", body='{"fields": {}}'),
+    )
+    page.click("a.vf-tabs__link:has-text('Records')")
+    _enable_write(page)
+    _fetch_records(page, "samples")
+
+    _edit_title(page, "Sample A1", "Edited A1")
+    changes = page.evaluate("() => pendingChanges()")
+    assert changes[0]["accession"] == "ERS111"
+    assert changes[0]["changes"]["title"] == "Edited A1"
+
+
+def test_records_manifest_gate(page):
+    """Submit stays locked until the manifests for the current edits have been
+    built, and re-locks as soon as anything is edited again."""
+    page.evaluate("() => { CREDS = { username: 'Webin-test', password: 'secret' }; }")
+    page.route(
+        "**/api/records/samples/fields",
+        lambda route: route.fulfill(status=200, content_type="application/json", body='{"fields": {}}'),
+    )
+    page.route(
+        "**/api/records/modify/preview",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"success": true, "results": [{"accession": "ERS111", "success": true, '
+            '"xml": "<SAMPLE_SET/>", "changes": {"title": "Edited A1"}, "messages": []}]}',
+        ),
+    )
+    page.click("a.vf-tabs__link:has-text('Records')")
+    _enable_write(page)
+    _fetch_records(page, "samples")
+
+    _edit_title(page, "Sample A1", "Edited A1")
+    assert page.is_disabled("#recSubmit"), "staged edits alone must not unlock submit"
+    assert not page.is_disabled("#recGenerate")
+
+    page.click("#recGenerate")
+    page.wait_for_function("() => !document.getElementById('recSubmit').disabled")
+    assert "manifest(s) built" in page.inner_text("#recManifestState")
+
+    _edit_title(page, "Edited A1", "Edited again")
+    assert page.is_disabled("#recSubmit"), "a further edit must re-lock submit"
+
+
+def test_records_grid_layout_survives_a_session_round_trip(page):
+    """A session stores the grid's arrangement, never its rows: switching away
+    and back returns the layout and filters, and re-fetches the records."""
+    page.evaluate("() => { CREDS = { username: 'Webin-test', password: 'secret' }; }")
+    page.click("a.vf-tabs__link:has-text('Records')")
+    _fetch_records(page, "samples")
+
+    page.evaluate(
+        """() => {
+            const grid = document.getElementById('recGrid');
+            grid.setLayout({ ...grid.getLayout(), hidden: ['alias'], pinned: ['title'] });
+            grid.setFilters([{ column: 'status', operator: 'eq', value: 'PRIVATE' }]);
+        }"""
+    )
+    first = page.evaluate("() => SESSION.id")
+    page.evaluate("() => saveSessionNow()")
+    page.wait_for_timeout(300)
+
+    # A second session: a blank grid, with none of the first session's state.
+    page.evaluate("() => openSessionModal()")
+    _open_session(page)
+    assert page.evaluate("() => document.getElementById('recGrid').getRows().length") == 0
+    assert page.evaluate("() => document.getElementById('recGrid').getFilters()") == []
+
+    # Back to the first: arrangement restored, rows re-fetched (not restored).
+    page.evaluate("(id) => openSession(id)", first)
+    page.wait_for_function("() => document.getElementById('recGrid').getRows().length > 0")
+    layout = page.evaluate("() => document.getElementById('recGrid').getLayout()")
+    assert layout["hidden"] == ["alias"]
+    assert layout["pinned"] == ["title"]
+    assert page.evaluate("() => document.getElementById('recGrid').getFilters()")[0]["column"] == "status"
+
+
+def test_session_state_holds_no_grid_rows(page):
+    """Row data is never persisted — a saved status is a stale status."""
+    page.evaluate("() => { CREDS = { username: 'Webin-test', password: 'secret' }; }")
+    page.click("a.vf-tabs__link:has-text('Records')")
+    _fetch_records(page, "samples")
+
+    state = page.evaluate("() => collectState()")
+    assert state["v"] == 2
+    assert "recOut" not in state["resultsHtml"]
+    assert set(state["grids"]["records"]) == {"layout", "filters", "entity"}
+    # The debug log deliberately keeps the first raw row; nothing else may.
+    assert "ERS111" not in json.dumps({k: v for k, v in state.items() if k != "logs"})
+
+
+def test_studies_grid_confirms_only_this_submission(page):
+    """After a submit, the grid shows what ENA holds — filtered to the
+    accessions this submission produced, and read-only."""
+    page.evaluate("() => { CREDS = { username: 'Webin-test', password: 'secret' }; }")
+    page.route(
+        "**/api/study/submit",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"success": true, "logs": ["INFO: done"], '
+            '"accessions": [{"alias": "studyA", "accession": "ERP111"}]}',
+        ),
+    )
+    page.click("a.vf-tabs__link:has-text('Studies')")
+    page.evaluate("() => { window.__preparedStudies = [{ alias: 'studyA' }]; }")
+    page.click("button:has-text('Submit prepared studies')")
+
+    page.wait_for_function("() => document.getElementById('studyGrid').getRows().length > 0")
+    assert page.evaluate("() => document.getElementById('studyGrid').getRows().length") == 2
+    visible = page.evaluate("() => document.getElementById('studyGrid').getVisibleRows()")
+    assert [row["accession"] for row in visible] == ["ERP111"]
+    assert page.get_attribute("#studyGrid", "mode") == "read"
+    assert page.evaluate("() => document.getElementById('studyGridEmpty').style.display") == "none"
+
+
+def test_samples_grid_confirms_only_this_submission(page):
+    """The Phase-5 study check, for samples — the three grids are parallel."""
+    page.evaluate("() => { CREDS = { username: 'Webin-test', password: 'secret' }; }")
+    page.route(
+        "**/api/sample/submit",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"success": true, "logs": ["INFO: done"], '
+            '"accessions": [{"alias": "MIMICC_A_1", "accession": "ERS111"}]}',
+        ),
+    )
+    page.click("a.vf-tabs__link:has-text('Samples')")
+    page.evaluate(
+        """() => {
+            window.__prepared = [{ alias: 'MIMICC_A_1' }];
+            document.getElementById('sampleSubmitBtn').disabled = false;
+        }"""
+    )
+    page.click("#sampleSubmitBtn")
+
+    page.wait_for_function("() => document.getElementById('sampleGrid').getRows().length > 0")
+    assert page.evaluate("() => document.getElementById('sampleGrid').getRows().length") == 2
+    visible = page.evaluate("() => document.getElementById('sampleGrid').getVisibleRows()")
+    assert [row["accession"] for row in visible] == ["ERS111"]
+    assert page.get_attribute("#sampleGrid", "mode") == "read"
 
 
 def _inject_fake_experiment_dh(page, rows):
@@ -375,3 +627,10 @@ def test_reads_submit_blocks_without_matching_experiment_row(page):
 
     assert submitted["called"] is False
     assert "No experiment metadata row found" in page.inner_text("#submitReadsBanner")
+
+
+def test_ena_browser_element_registered(page, live_server_url):
+    """The vendored bundle is served and defines the custom element."""
+    resp = page.request.get(f"{live_server_url}/static/vendor/ena-browser/ena-browser.iife.js")
+    assert resp.status == 200
+    assert page.evaluate("() => !!window.customElements.get('ena-browser')")

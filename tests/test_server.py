@@ -8,6 +8,7 @@ from contextlib import contextmanager
 
 import conftest
 import ena_service
+import views_records
 
 # ---------------------------------------------------------------------------
 # Health
@@ -20,6 +21,8 @@ async def test_health(client):
     body = r.json()
     assert body["status"] == "ok"
     assert "library_presets" not in body
+    assert "samples" in body["editable_columns"]
+    assert body["ena_browser_available"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +88,70 @@ async def test_records_list_passes_full_fields_through(client, with_creds, monke
     await client.get("/api/records/samples?test=true&full_fields=true")
 
     assert [k["full_fields"] for k in seen] == [False, True]
+
+
+async def test_records_list_passes_criteria_through(client, with_creds, monkeypatch):
+    seen: list[dict] = []
+    monkeypatch.setattr(ena_service, "list_records", lambda *a, **k: seen.append(k) or [])
+
+    await client.get("/api/records/samples?search=foo&linked_to=PRJEB1&unlinked=true")
+
+    assert seen[0]["search"] == "foo"
+    assert seen[0]["linked_to"] == "PRJEB1"
+    assert seen[0]["unlinked"] is True
+
+
+async def test_records_fields(client, with_creds, monkeypatch):
+    monkeypatch.setattr(
+        ena_service,
+        "read_editable_fields",
+        lambda *a, **k: {"ERS1": {"alias": "a", "title": "t"}},
+    )
+    r = await client.post("/api/records/samples/fields", json={"accessions": ["ERS1"], "test": True})
+    assert r.status_code == 200
+    assert r.json() == {"fields": {"ERS1": {"alias": "a", "title": "t"}}}
+
+
+async def test_records_modify_preview_does_not_submit(client, with_creds, monkeypatch):
+    preview = {"manifests": [{"accession": "ERS1", "xml": "<SAMPLE_SET/>"}]}
+    monkeypatch.setattr(ena_service, "preview_modify_records", lambda *a, **k: preview)
+
+    def never(*a, **k):
+        raise AssertionError("preview must not submit")
+
+    monkeypatch.setattr(ena_service, "modify_records", never)
+
+    r = await client.post(
+        "/api/records/modify/preview",
+        json={"entity": "samples", "records": [{"accession": "ERS1", "changes": {"title": "new"}}], "test": True},
+    )
+    assert r.status_code == 200
+    assert r.json() == preview
+
+
+async def test_records_modify_uses_submission_alias(client, with_creds, monkeypatch):
+    seen: list[dict] = []
+    monkeypatch.setattr(ena_service, "modify_records", lambda *a, **k: seen.append(k) or {"success": True})
+
+    r = await client.post(
+        "/api/records/modify",
+        json={"entity": "samples", "records": [{"accession": "ERS1", "changes": {"title": "new"}}], "test": True},
+    )
+    assert r.status_code == 200
+    assert seen[0]["submission_alias"] == views_records.MODIFY_ALIAS
+
+
+async def test_records_modify_unexpected_error_is_502(client, with_creds, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("ENA said no")
+
+    monkeypatch.setattr(ena_service, "modify_records", boom)
+    r = await client.post(
+        "/api/records/modify",
+        json={"entity": "samples", "records": [{"accession": "ERS1", "changes": {"title": "new"}}], "test": True},
+    )
+    assert r.status_code == 502
+    assert r.json()["detail"] == "RuntimeError: ENA said no"
 
 
 async def test_records_unknown_entity(client, with_creds, monkeypatch):

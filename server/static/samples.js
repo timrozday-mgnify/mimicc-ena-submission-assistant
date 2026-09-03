@@ -54,6 +54,7 @@ async function submitStudies() {
     );
     renderSubmissionLog("studyLog", r);
     renderTable("studyOut", r.accessions || []);
+    if (r.success) await refreshStudyGrid();
     await saveSessionNow();
   } catch (e) {
     const failure = { accessions: [], logs: [...clientLogs, `ERROR: ${e.message}`] };
@@ -62,6 +63,32 @@ async function submitStudies() {
     renderSubmissionLog("studyLog", failure);
     renderTable("studyOut", []);
     await saveSessionNow();
+  }
+}
+
+/** The accessions this session actually submitted. A study with no accession
+ *  never reached ENA, so it has nothing to confirm. */
+function submittedStudyAccessions() {
+  const submitted = (window.__lastStudySubmitResponse?.accessions || []).map((r) => r.accession);
+  const prepared = (window.__preparedStudies || []).map((r) => r.accession);
+  return [...new Set([...submitted, ...prepared])].filter(Boolean);
+}
+
+/** Show the submitted studies as ENA now holds them — read-only, and filtered
+ *  to this submission. Lifecycle actions and edits live on the Records tab. */
+async function refreshStudyGrid() {
+  const keep = submittedStudyAccessions();
+  const grid = $("studyGrid");
+  $("studyGridEmpty").style.display = keep.length ? "none" : "block";
+  if (!keep.length) { grid.setRows([]); return; }
+  try {
+    const rows = await api(`/api/records/studies?test=${TEST}&status=all`);
+    grid.applyConfig({ entity: "studies", mode: "read", selectionMode: "none", rowActions: [] });
+    applySavedGridLayout("studyOut", "studies");
+    grid.setRows(rows);
+    grid.setFilters([{ column: "accession", operator: "in", values: keep }]);
+  } catch (e) {
+    banner("studyBanner", false, e.message);
   }
 }
 
@@ -99,18 +126,45 @@ async function prepareSamples() {
     scheduleSave();
   } catch (e) { banner("prepBanner", false, e.message); $("sampleSubmitBtn").disabled = true; }
 }
+/** The accessions this session actually submitted; a sample with none never
+ *  reached ENA. */
+function submittedSampleAccessions() {
+  const submitted = (window.__lastSampleSubmitResponse?.accessions || []).map((r) => r.accession);
+  const prepared = (window.__prepared || []).map((r) => r.accession);
+  return [...new Set([...submitted, ...prepared])].filter(Boolean);
+}
+
+/** The samples side of the same confirmation as refreshStudyGrid(). */
+async function refreshSampleGrid() {
+  const keep = submittedSampleAccessions();
+  const grid = $("sampleGrid");
+  $("sampleGridEmpty").style.display = keep.length ? "none" : "block";
+  if (!keep.length) { grid.setRows([]); return; }
+  try {
+    const rows = await api(`/api/records/samples?test=${TEST}&status=all`);
+    grid.applyConfig({ entity: "samples", mode: "read", selectionMode: "none", rowActions: [] });
+    applySavedGridLayout("sampleOut", "samples");
+    grid.setRows(rows);
+    grid.setFilters([{ column: "accession", operator: "in", values: keep }]);
+  } catch (e) {
+    banner("sampleBanner", false, e.message);
+  }
+}
+
 async function submitSamples() {
   try {
     const r = await api("/api/sample/submit", { method: "POST", body: JSON.stringify({
       records: window.__prepared || [], test: TEST, modify: $("sampleModify").checked,
       checklist: $("sampleChecklist").value || null, hold_until: $("sampleHold").value || null, public: $("samplePublic").checked,
     }) });
+    window.__lastSampleSubmitResponse = r;
     banner("sampleBanner", r.success, r.success ? `Submitted ${(r.accessions || []).length} sample(s).` : (r.error || "Submission failed."));
     renderSubmissionResult("sampleOut", r);
+    if (r.success) await refreshSampleGrid();
     if (r.success && Array.isArray(r.accessions)) {
       READ_SAMPLES = r.accessions;
-      SELECTED_SAMPLE = "";
-      renderReadSampleList();
+      setSelectedSample("");
+      refreshAssignedCounts();
     }
     scheduleSave();
   } catch (e) {
