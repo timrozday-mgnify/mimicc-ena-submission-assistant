@@ -437,9 +437,36 @@ async function submitReads(doSubmit) {
       ok ? `Done: ${results.length} run(s)${skipped ? `, ${skipped} skipped` : ""}${doSubmit ? "" : " (validate only)"}.`
          : "Some runs failed — see results.");
     renderTable("readsResults", results);
+    await refreshReadsGrid(results);
     renderRunTable();
     saveSessionNow();
   } catch (e) { banner("submitReadsBanner", false, e.message); }
+}
+
+/** The run accessions this session put in ENA: what the last batch returned,
+ *  plus the resume ledger — a resumed batch skips runs it submitted earlier,
+ *  and those belong in the confirmation too. */
+function submittedRunAccessions(results = []) {
+  const fromResults = results.map((r) => r.run_accession);
+  const fromLedger = Object.values(READS_RUNS).map((r) => r.run_accession);
+  return [...new Set([...fromResults, ...fromLedger])].filter(Boolean);
+}
+
+/** The runs as ENA now holds them — read-only, filtered to this session's. */
+async function refreshReadsGrid(results = []) {
+  const keep = submittedRunAccessions(results);
+  const grid = $("readsGrid");
+  $("readsGridEmpty").style.display = keep.length ? "none" : "block";
+  if (!keep.length) { grid.setRows([]); return; }
+  try {
+    const rows = await api(`/api/records/runs?test=${TEST}&status=all`);
+    grid.applyConfig({ entity: "runs", mode: "read", selectionMode: "none", rowActions: [] });
+    applySavedGridLayout("readsOut", "runs");
+    grid.setRows(rows);
+    grid.setFilters([{ column: "accession", operator: "in", values: keep }]);
+  } catch (e) {
+    banner("submitReadsBanner", false, e.message);
+  }
 }
 
 // Run one upload on the local helper and relay the outcome back to the server.

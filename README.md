@@ -39,9 +39,11 @@ New glue added here:
   Browser API — private records included, and it is the only source that works
   against the test environment) plus, on production, the ENA Portal's ~200
   indexed fields. It costs an extra request per 100 records, so it is off by
-  default. Planned to move onto the
-  reusable [`ena-browser`](https://github.com/timrozday-mgnify/ena-browser)
-  grid element — see "Record grids (ena-browser)" below and `ENA_BROWSER_PLAN.md`.
+  default. Rendered by the reusable
+  [`ena-browser`](https://github.com/timrozday-mgnify/ena-browser) grid element,
+  which also carries editing: in write mode a cell edit becomes an ENA **MODIFY**,
+  gated behind a manifest preview of the exact XML — see "Record grids
+  (ena-browser)" below.
 
 Everything runs against ENA **test** by default; a header toggle switches to
 **production** (with a confirm). Webin credentials are held per-user in a
@@ -311,29 +313,45 @@ matching row, appends a new one otherwise).
 ### Record grids (ena-browser)
 
 Record tables — anything showing rows that came from ENA's **Webin Reports API** —
-are being moved onto [`ena-browser`](https://github.com/timrozday-mgnify/ena-browser),
+are rendered by [`ena-browser`](https://github.com/timrozday-mgnify/ena-browser),
 a standalone, framework-free `<ena-browser>` custom element built on Handsontable.
 It is vendored as a prebuilt bundle (`server/static/vendor/ena-browser/`) at a pinned
 release tag and loaded with plain `<script>`/`<link>` tags — it introduces no npm
 build step, exactly like the embedded DataHarmonizer bundle.
 
-**Three places it is used:**
+**Five grids:**
 
-1. **Records tab** — the main browser. Per-column filtering and sorting, column
-   pinning/reordering/hiding, and (in `mode="edit"`) cell editing that produces a
-   *change set*, which this app turns into an ENA **MODIFY** submission via
-   `ena-submission-toolkit`. The "hide cancelled" / "hide suppressed" toggles are
-   built into the element and replace the old status `<select>`.
-2. **Reads tab, pairing panel** — the *samples* side of read↔sample pairing, in
-   `selection-mode="single"`. Selecting a sample fires `ena-browser:selection-change`;
-   this app stores `detail.lastKey` in `SELECTED_SAMPLE` and the subsequent click on a
-   read-group row records the pairing, as it does today. The per-sample file count is
-   a **pinned custom column** (`reads_assigned`) that this app pushes in with
-   `setCustomValues("reads_assigned", {ERS…: 2})` after every change to the run rows —
-   updating it does not re-sort the grid or lose the selection.
-3. **Post-submission confirmation** — a read-only grid filtered to the accessions just
-   submitted, to show the records really are in ENA (alongside, not instead of, the
-   receipt table).
+1. **Records tab** (`#recGrid`) — the main browser. Fetch criteria (search, "linked
+   to accession", unlinked-only, status, all-fields) are criteria on the *request*,
+   applied server-side by `ena-submission-toolkit`; per-column filtering, sorting and
+   column pinning/reordering/hiding are the element's own and client-side. The "hide
+   cancelled" / "hide suppressed" toggles are built into the element. With **write
+   mode** ticked (`#recWrite`, off on every page load and never restored from a
+   session) cells become editable and row actions appear.
+2. **Studies tab** (`#studyGrid`) and **3. Samples tab** (`#sampleGrid`) —
+   post-submission confirmation: a read-only grid of the account listing, filtered to
+   the accessions this submission produced, shown *alongside* the receipt table
+   (which is what the submission did, failures included, and not the same thing).
+4. **Reads tab, pairing panel** (`#pairSamples`) — the *samples* side of read↔sample
+   pairing, in `selection-mode="single"`. Selecting a sample fires
+   `ena-browser:selection-change`; this app stores `detail.lastKey` in
+   `SELECTED_SAMPLE` and the next click on a read-group row records the pairing. The
+   per-sample file count is a **pinned custom column** (`reads_assigned`) pushed in
+   with `setCustomValues("reads_assigned", {ERS…: 2})` after every change to the run
+   rows — updating it does not re-sort the grid or lose the selection.
+5. **Reads tab, confirmation** (`#readsGrid`) — the runs just submitted, unioned with
+   the resume ledger so a resumed batch shows its earlier runs too. Run rows carry
+   `process_status` / `process_date` / `process_error`: whether ENA has finished
+   **archiving** the read files, which registering a run does not say. "Submitted" and
+   "archived" are different things, and this column is where you see the difference.
+
+**Editing is gated.** An ENA MODIFY *replaces* the whole record, so **Submit changes**
+stays locked until *Generate manifests* has built and shown the exact XML for the
+current edits (`POST /api/records/modify/preview`), and any further edit re-locks it.
+The editable fields per entity come from `/api/health` (`editable_columns`) — the
+server builds the XML, so it is the authority — plus this listing's checklist
+attributes, which arrive as `attr:`-prefixed columns when **all fields** is ticked and
+are addressed by tag in the MODIFY.
 
 **The division of responsibility.** The element is a *view*: it renders, filters,
 sorts, selects and tracks edits. It does not fetch, does not hold credentials, does
@@ -344,18 +362,39 @@ debug log, the release/hold/suppress/cancel handlers (the element only *emits*
 filters, and the pairing logic that joins a selected sample to a read group.
 Manifest/XML building for modifications stays in `ena-submission-toolkit`.
 
+**Deliberately not ported** from [`ena-browser-ui`](https://github.com/timrozday-mgnify/ena-browser-ui),
+the standalone app this grew from: the Portal "all of ENA (read-only)" source,
+undo/redo, and the change-history stack. They serve a browsing app rather than a
+submission workflow, and each is independently addable later.
+
+**Session state.** Sessions persist each grid's layout (column order, pins, hidden
+columns, widths) and filters, and never its rows: a saved row shows the status it had
+when it was saved, which after a release or a suppress is the wrong one. Restoring a
+session re-fetches instead, with the saved layout applied *before* the rows arrive —
+a column the grid first meets in the data arrives hidden, and that sticks.
+
 **Usage sketch:**
 
 ```js
 const grid = document.getElementById("recGrid");
-grid.config = { entity: "samples", mode: "edit", editableColumns: ["alias", "title"] };
+grid.applyConfig({ entity: "samples", mode: "edit", editableColumns: ["alias", "title"] });
 grid.setRows(await api(`/api/records/samples?test=${TEST}`));
 
-grid.addEventListener("ena-browser:change", () => {
-  $("recSubmit").disabled = grid.getChangeSet().rows.length === 0;
-});
-grid.addEventListener("ena-browser:row-action", (e) => recAction(e.detail.action, e.detail.key));
+grid.addEventListener("ena-browser:change", () => refreshSubmitButton());
+grid.addEventListener("ena-browser:row-action", (e) =>
+  recAction(e.detail.action, e.detail.row?.accession || e.detail.key));
 ```
+
+**Two page-level fixes the element needs** (both in `core.js`, both easy to
+re-break):
+
+- The body `keydown`/`keyup` swallower — there because each DataHarmonizer iframe
+  attaches a Handsontable shortcut recorder to *this* page's `documentElement` — now
+  lets events inside an `<ena-browser>` through, since the in-page grid's own recorder
+  sits there too. Without it the grid takes no keystrokes at all.
+- Handsontable focuses a hidden input on mousedown, and the browser scrolling that
+  into view moved the grid ~140px between mousedown and mouseup, so a click on a
+  row-action button never completed. The page scroll is pinned across that focus.
 
 Theming needs no wiring: the element reads the same CSS custom properties this app
 already defines (`--bg`, `--panel`, `--line`, `--fg`, `--muted`, `--accent`, …) and
@@ -368,21 +407,11 @@ wiring, unlike the DataHarmonizer iframes, which need `propagateThemeToFrames()`
 Refresh the vendored bundle with `task vendor:ena-browser` after bumping
 `ENA_BROWSER_REF` in `Taskfile.yml`; the two downloaded files are committed (like
 the DataHarmonizer bundle) so image builds and the Playwright suites need no
-network fetch.
+network fetch. `pre-commit` skips `server/static/vendor/` — reformatting a bundle
+corrupts it.
 
-**Deliberately not ported from `ena-browser-ui`:** the Portal "all of ENA
-(read-only)" source, undo/redo, and the change-history stack. They serve a
-browsing app rather than a submission workflow, and each is independently
-addable later.
-
-Submitting an edit is gated: a MODIFY replaces the whole record in ENA, so
-**Submit changes** stays locked until the exact XML for the current edits has
-been built by *Generate manifests* and shown — and any further edit re-locks it.
-Write mode itself is a per-session checkbox (`#recWrite`), off on every load and
-never restored from a saved session.
-
-The step-by-step adoption plan (including which Playwright tests change) is in
-[`ENA_BROWSER_PLAN.md`](ENA_BROWSER_PLAN.md).
+The plan this was built from — including the collisions it had to work around —
+is in [`ENA_BROWSER_PLAN.md`](ENA_BROWSER_PLAN.md).
 
 ## Submission sessions
 
@@ -535,10 +564,15 @@ is pulled for reads upload.
 All sibling-repo code is pulled at a fixed git tag, never a local checkout or
 `main`/`master`. The pins live in two places:
 
-- **`pyproject.toml`** — `ena-api-client`, `linkml-lib`, and
-  `ena-submission-toolkit` as
+- **`pyproject.toml`** — `ena-api-client` (v0.1.3), `linkml-lib` (v0.1.0), and
+  `ena-submission-toolkit` (v0.1.4 — the tag that adds `attr:` checklist columns
+  and attribute editing) as
   `name @ git+https://github.com/timrozday-mgnify/<repo>.git@<tag>` entries
   in `[project.dependencies]`.
+- **`Taskfile.yml`** — `ENA_BROWSER_REF` (v0.1.1), the `ena-browser` release whose
+  `ena-browser.iife.js` + `ena-browser.css` are vendored into
+  `server/static/vendor/ena-browser/` and **committed**. Bump the ref, then
+  `task vendor:ena-browser`, then commit the two files.
 - **`Dockerfile`** — `DATAHARMONIZER_REF` / `DH_BUILDER_REF` build
   args, and **`docker-compose.yml`** — the `read-helper-app` and `dhtb` services'
   `build.context`/`additional_contexts` git URLs (`...git#<tag>`, or

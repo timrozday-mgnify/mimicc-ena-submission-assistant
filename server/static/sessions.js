@@ -193,6 +193,7 @@ const _LOG_IDS = ["studyLog", "readsLog", "recLog"];
 // re-fetched instead.
 const _GRID_IDS = {
   records: "recGrid", studyOut: "studyGrid", sampleOut: "sampleGrid", pairing: "pairSamples",
+  readsOut: "readsGrid",
 };
 
 let SAVED_GRIDS = {};
@@ -208,6 +209,7 @@ function collectGrids() {
   if (out.studyOut) out.studyOut.entity = "studies";
   if (out.sampleOut) out.sampleOut.entity = "samples";
   if (out.pairing) out.pairing.entity = "samples";
+  if (out.readsOut) out.readsOut.entity = "runs";
   return out;
 }
 

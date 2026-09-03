@@ -407,6 +407,15 @@
       <div class="vf-banner vf-banner--alert" style="display:none" id="submitReadsBanner"></div>
       <div class="log" id="readsLog"></div>
       <div class="scroll" id="readsResults"></div>
+      <!-- Receipt above; what ENA now holds below. The run rows carry
+           process_status/process_date/process_error — whether ENA has finished
+           *archiving* the read files, which registering a run does not say. -->
+      <h3 class="log-heading">In ENA</h3>
+      <ena-browser id="readsGrid" entity="runs" mode="read" height="360"></ena-browser>
+      <p class="muted" id="readsGridEmpty">Submit reads (or click <b>Refresh from ENA</b>) to see them here.</p>
+      <div class="actions">
+        <button class="vf-button vf-button--secondary" onclick="refreshReadsGrid()">Refresh from ENA</button>
+      </div>
     </div>
   </section>
 

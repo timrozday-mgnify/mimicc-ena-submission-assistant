@@ -82,7 +82,7 @@ def page(compose_url):
 def test_page_loads_with_tabs(page):
     assert "MIMICC ENA Submission Assistant" in page.title()
     for tab in ("Credentials", "Studies", "Samples", "Reads", "Records"):
-        assert page.query_selector(f"nav button:has-text('{tab}')")
+        assert page.query_selector(f"a.vf-tabs__link:has-text('{tab}')")
 
 
 def test_env_pill_default_test(page):
@@ -90,25 +90,28 @@ def test_env_pill_default_test(page):
 
 
 def test_tab_switching(page):
-    page.click("nav button:has-text('Reads')")
-    assert page.query_selector("#tab-reads").is_visible()
-    assert not page.query_selector("#tab-creds").is_visible()
+    page.click("a.vf-tabs__link:has-text('Reads')")
+    # VF's JS copies the section id onto the tab anchor, so target the content
+    # sections by position (0=creds, 1=studies, 2=samples, 3=reads).
+    sections = page.locator(".vf-tabs-content .vf-tabs__section")
+    assert sections.nth(3).is_visible()
+    assert not sections.nth(0).is_visible()
 
 
 def test_maximize_controls_for_reads_and_dataharmonizer(page):
-    page.click("nav button:has-text('Reads')")
+    page.click("a.vf-tabs__link:has-text('Reads')")
     page.click("#readsAssignPanel button[aria-label='Maximize panel']")
     assert "maximized" in page.get_attribute("#readsAssignPanel", "class")
     page.click("#readsAssignPanel button[aria-label='Minimize panel']")
     assert "maximized" not in page.get_attribute("#readsAssignPanel", "class")
 
-    page.click("nav button:has-text('Studies')")
+    page.click("a.vf-tabs__link:has-text('Studies')")
     page.click("#studyDhPanel button[aria-label='Maximize panel']")
     assert "maximized" in page.get_attribute("#studyDhPanel", "class")
     page.click("#studyDhPanel button[aria-label='Minimize panel']")
     assert "maximized" not in page.get_attribute("#studyDhPanel", "class")
 
-    page.click("nav button:has-text('Samples')")
+    page.click("a.vf-tabs__link:has-text('Samples')")
     page.click("#dhPanel button[aria-label='Maximize panel']")
     assert "maximized" in page.get_attribute("#dhPanel", "class")
     page.click("#dhPanel button[aria-label='Minimize panel']")
@@ -119,7 +122,7 @@ def test_dh_bundle_iframe_loads(page):
     # Real DataHarmonizer bundle (server/static/dh/, seeded at container
     # start), not a stub — confirms the dh-builder image stage actually
     # produced a usable bundle.
-    page.click("nav button:has-text('Samples')")
+    page.click("a.vf-tabs__link:has-text('Samples')")
     page.wait_for_function("() => document.getElementById('dhFrame').src.includes('/dh/')")
     frame = page.frame_locator("#dhFrame")
     frame.locator("body").wait_for(timeout=15_000)
@@ -142,6 +145,27 @@ def test_dh_bundle_iframe_loads(page):
         "rows => rows.map(row => Math.round(row.getBoundingClientRect().height))"
     )
     assert after == before
+
+
+def test_dh_grid_still_takes_keystrokes_beside_an_ena_browser(page):
+    """The body keydown/keyup swallower now lets events inside an <ena-browser>
+    reach documentElement — where each DH iframe's Handsontable also listens.
+    This is the only suite with both a real DH bundle and an in-page grid, so
+    it is where that narrowing gets checked: typing into a DH cell must still
+    land, and must not be eaten or duplicated.
+    """
+    page.click("a.vf-tabs__link:has-text('Samples')")
+    _wait_for_dh_iframe_ready(page, "#dhFrame")
+    assert page.evaluate("() => document.querySelectorAll('ena-browser').length") > 0
+
+    frame = page.frame_locator("#dhFrame")
+    # Not the first column: it is frozen, so the clone overlay covers the
+    # master copy and a click never reaches it.
+    cell = frame.locator(".ht_master .htCore tbody tr").first.locator("td").nth(4)
+    cell.dblclick()
+    page.keyboard.type("typed-here")
+    page.keyboard.press("Enter")
+    assert "typed-here" in cell.inner_text()
 
 
 def _wait_for_dh_iframe_ready(page, frame_id):
@@ -176,7 +200,7 @@ def test_schema_selection_reloads_real_dh_iframes_without_toolbar_error(page):
     page.on("pageerror", lambda exc: errors.append(str(exc)))
     page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
 
-    page.click("nav button:has-text('Samples')")
+    page.click("a.vf-tabs__link:has-text('Samples')")
     page.wait_for_selector("#sampleSchemaSelect option[value='mimicc_experiment']", state="attached")
     page.select_option("#sampleSchemaSelect", "mimicc_experiment")
     page.click("#dhPanel button:has-text('Use this schema')")
@@ -184,7 +208,7 @@ def test_schema_selection_reloads_real_dh_iframes_without_toolbar_error(page):
     assert "Switched the sample grid" in page.inner_text("#prepBanner")
     _wait_for_dh_iframe_ready(page, "#dhFrame")
 
-    page.click("nav button:has-text('Reads')")
+    page.click("a.vf-tabs__link:has-text('Reads')")
     page.wait_for_selector("#expSchemaSelect option[value='mimicc_sample']", state="attached")
     page.select_option("#expSchemaSelect", "mimicc_sample")
     page.click("#expDhPanel button:has-text('Use this schema')")
@@ -196,7 +220,7 @@ def test_schema_selection_reloads_real_dh_iframes_without_toolbar_error(page):
     # (schema_service ROLE_FOLDERS["study"] == "study", built by the Dockerfile
     # dh-builder stage). Selecting any library schema compiles it into that
     # slot and reloads the grid — same contract as sample/experiment above.
-    page.click("nav button:has-text('Studies')")
+    page.click("a.vf-tabs__link:has-text('Studies')")
     page.wait_for_selector("#studySchemaSelect option[value='sra_study']", state="attached")
     page.select_option("#studySchemaSelect", "sra_study")
     page.click("#studyDhPanel button:has-text('Use this schema')")
@@ -211,7 +235,7 @@ def test_study_grid_auto_loads_on_startup(page):
     # initDhFrames() points the study frame at study/<registry.study> on load,
     # same as the sample/experiment grids — so the Studies tab shows a real
     # grid without the user having to pick a schema first.
-    page.click("nav button:has-text('Studies')")
+    page.click("a.vf-tabs__link:has-text('Studies')")
     # URLSearchParams percent-encodes the slash, so the src is
     # `?template=study%2F<name>` — match the un-encoded prefix.
     page.wait_for_function("() => document.getElementById('studyDhFrame').src.includes('template=study')")
@@ -222,7 +246,7 @@ def test_dhtb_sidecar_iframe_loads(page):
     # The dhtb iframe is cross-origin (separate container on MIMICC_DHTB_PORT)
     # — this is the integration the in-process fixture (test_ui.py) can't
     # exercise, since there's no real second container to reach there.
-    page.click("nav button:has-text('Schema')")
+    page.click("a.vf-tabs__link:has-text('Schema')")
     page.wait_for_function("() => !!document.getElementById('schemaEditorFrame').src")
     deadline = time.time() + 15
     while time.time() < deadline:

@@ -24,6 +24,16 @@ or to the `Dockerfile` dh-builder stage MUST add or extend a Playwright test —
 the real bundle / sidecar. The three submission grids (Studies, Samples, Reads)
 are parallel: a test for one usually has an analog for the others.
 
+**Record grids are `ena-browser`'s, not ours.** Filtering, sorting, pinning,
+selection and cell-edit mechanics have their own Playwright suite in that repo —
+do not re-test them here. Tests in this repo assert the *wiring*, through the
+element's public API: `getRows`, `getVisibleRows`, `getSelection`,
+`getChangeSet`, `getLayout`, `getFilters`. Never assert on Handsontable
+internals or `.ht*` classes. Two unavoidable exceptions, both because the pinned
+column's clickable copy is the `.ht_clone_inline_start` overlay rather than the
+master table: clicking a row-action button, and reading a custom column's badge
+(`reads_assigned` has no public getter). Nothing else may reach for them.
+
 ## DataHarmonizer template folders
 
 Each submission role is bound to a **fixed** DH template folder

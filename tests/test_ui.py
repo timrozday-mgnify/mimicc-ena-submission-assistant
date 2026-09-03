@@ -531,6 +531,27 @@ def test_samples_grid_confirms_only_this_submission(page):
     assert page.get_attribute("#sampleGrid", "mode") == "read"
 
 
+def test_reads_grid_confirms_submitted_runs(page):
+    """The reads confirmation grid is limited to this session's runs and shows
+    ENA's archiving state, which "submitted" does not imply."""
+    page.evaluate("() => { CREDS = { username: 'Webin-test', password: 'secret' }; }")
+    page.click("a.vf-tabs__link:has-text('Reads')")
+    page.evaluate(
+        """() => { READS_RUNS = { runA: { run_name: 'runA', status: 'done',
+                                          run_accession: 'ERR111',
+                                          experiment_accession: 'ERX111' } }; }"""
+    )
+    page.click("#vf-tabs__section--reads button:has-text('Refresh from ENA')")
+
+    page.wait_for_function("() => document.getElementById('readsGrid').getRows().length > 0")
+    assert page.evaluate("() => document.getElementById('readsGrid').getRows().length") == 2
+    visible = page.evaluate("() => document.getElementById('readsGrid').getVisibleRows()")
+    assert [row["accession"] for row in visible] == ["ERR111"]
+    assert visible[0]["process_status"] == "COMPLETED"
+    headers = page.eval_on_selector_all("#readsGrid th", "els => els.map((e) => e.innerText)")
+    assert any("rocess status" in h for h in headers)
+
+
 def _inject_fake_experiment_dh(page, rows):
     """Stand in for a loaded experiment DataHarmonizer grid: the real second
     template isn't built in this (non-Docker) test environment, but the merge

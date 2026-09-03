@@ -161,6 +161,20 @@ def live_server_url():
                     "study_accession": "ERP111",
                     "sample_accession": "ERS111",
                     "status": "PRIVATE",
+                    # ENA's run-processing report: whether the read files are
+                    # archived, which registering a run does not say.
+                    "process_status": "COMPLETED",
+                    "process_date": "2026-01-02",
+                },
+                {
+                    "alias": "runB",
+                    "accession": "ERR222",
+                    "experiment_accession": "ERX222",
+                    "study_accession": "ERP111",
+                    "sample_accession": "ERS222",
+                    "status": "PRIVATE",
+                    "process_status": "IN_QUEUE",
+                    "process_date": "2026-01-02",
                 },
             ]
         if entity == "experiments":
