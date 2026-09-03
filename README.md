@@ -462,7 +462,7 @@ python -m venv .venv && . .venv/bin/activate
 pip install .                            # full stack: Django (ORM + HTTP), gunicorn,
                                           # linkml, and the pinned ena_api/linkml_lib/
                                           # ena-submission-toolkit git dependencies
-pip install pytest pytest-asyncio anyio playwright
+pip install pytest pytest-asyncio playwright   # or: uv sync (installs these too)
 
 # Apply migrations. With no DATABASE_URL the ORM uses a local SQLite file
 # (.data/app.db); set DATABASE_URL=postgresql://… to use Postgres instead.
@@ -485,8 +485,11 @@ resolves them by default, with `ENA_DH_SCHEMA`/`ENA_DH_XSD`/
 and Playwright (UI), mirroring `read-helper-app`'s patterns. No Docker or network
 needed — the webin-cli runner and `ena_service` calls are mocked.
 
+The test-only packages are the `dev` dependency group in `pyproject.toml`, so
+`uv sync` installs them — and, just as importantly, does not prune them.
+
 ```bash
-pip install pytest pytest-asyncio anyio playwright
+uv sync                                    # or: pip install pytest pytest-asyncio playwright
 python -m playwright install chromium     # for the UI tests
 python -m pytest -q                        # all tests
 python -m pytest tests/test_server.py -q   # API only

@@ -24,6 +24,16 @@ dependencies = [
     "ena-submission-toolkit @ git+https://github.com/timrozday-mgnify/ena-submission-toolkit.git@v0.1.4",
 ]
 
+# Test-only. `uv sync` installs these by default and prunes anything it does
+# not know about, so they have to be declared here or a sync silently removes
+# pytest and Playwright from .venv.
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "playwright",
+]
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
