@@ -27,7 +27,9 @@
   .panel { padding:16px; margin-bottom:16px; }
   .panel-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
   .panel-head h2 { margin:0; }
-  .panel.maximized { position:fixed; inset:10px; z-index:200; margin:0; display:flex; flex-direction:column; overflow:hidden;
+  /* Visual Framework components establish their own elevated layers. Keep a
+     maximized panel above all page chrome, including the hero and tab bar. */
+  .panel.maximized { position:fixed; inset:10px; z-index:10000; margin:0; display:flex; flex-direction:column; overflow:hidden;
                      box-shadow:0 20px 80px rgba(0,0,0,.45); }
   body.has-maximized-panel { overflow:hidden; }
   .panel.maximized .panel-body { min-height:0; flex:1; display:flex; flex-direction:column; overflow:hidden; }
@@ -82,8 +84,15 @@
   .subpanel { border:1px solid var(--line); border-radius:6px; padding:12px; margin-top:10px; background:var(--bg); }
   .dirlist a { color:var(--fg); text-decoration:none; display:block; padding:4px 6px; border-radius:4px; }
   .dirlist a:hover { background:var(--panel); }
-  .assign-grid { --assign-table-height:380px; display:grid; grid-template-columns:minmax(320px, 460px) minmax(0, 1fr); gap:12px; margin-top:12px; align-items:start; }
-  .assign-grid > .scroll { height:var(--assign-table-height); max-height:var(--assign-table-height); }
+  .assign-grid { --assign-table-height:380px; --assign-left-width:42%; display:grid; grid-template-columns:minmax(280px, var(--assign-left-width)) 14px minmax(0, 1fr); gap:0; height:var(--assign-table-height); margin-top:12px; align-items:stretch; }
+  .assign-samples-pane { display:flex; flex-direction:column; min-width:0; min-height:0; padding-right:12px; }
+  .assign-samples-pane > ena-browser { flex:1 1 auto; min-height:0; height:auto !important; margin-top:8px; }
+  .assign-grid > .scroll { height:100%; max-height:none; margin-left:12px; }
+  .assign-divider { position:relative; z-index:1; width:14px; border:0; border-radius:7px; background:transparent; cursor:col-resize; touch-action:none; }
+  .assign-divider::before { content:""; position:absolute; inset:8px 5px; border-radius:4px; background:var(--line); }
+  .assign-divider::after { content:"⋮"; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color:var(--muted); font-size:18px; line-height:1; }
+  .assign-divider:hover::before, .assign-divider:focus-visible::before, .assign-divider.is-dragging::before { background:var(--accent); }
+  .assign-divider:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
   #runTable tbody tr.assignable { cursor:pointer; }
   #runTable tbody tr.assignable:hover { background:var(--panel); }
   .icon-btn { background:var(--btn2-bg); color:var(--btn2-fg); border:1px solid var(--line); border-radius:6px; padding:3px 7px; cursor:pointer; width:auto; }
@@ -91,7 +100,7 @@
   .session-chip { display:inline-flex; align-items:center; gap:8px; font-size:12px; padding:2px 4px 2px 10px;
                   border:1px solid var(--line); border-radius:12px; }
   .session-chip #sessionName { font-weight:600; }
-  .modal-overlay { display:none; position:fixed; inset:0; z-index:300; background:rgba(0,0,0,.55);
+  .modal-overlay { display:none; position:fixed; inset:0; z-index:10100; background:rgba(0,0,0,.55);
                    align-items:flex-start; justify-content:center; padding:48px 16px; overflow:auto; }
   .modal-overlay.show { display:flex; }
   .modal-box { width:100%; max-width:640px; margin:0; }
@@ -101,10 +110,13 @@
   .session-row .meta { color:var(--muted); font-size:11px; }
   body.no-session main { filter:blur(2px); pointer-events:none; user-select:none; }
   .panel.maximized .dh-embed-wrap { height:100%; max-height:none; resize:none; }
-  .panel.maximized .assign-grid { --assign-table-height:100%; flex:1; min-height:0; }
+  /* Let flex allocate the remaining space after the panel controls and any
+     visible status banner. A literal height:100% here overflows the body by
+     the controls' height and can put the last table rows under the banner. */
+  .panel.maximized .assign-grid { --assign-table-height:auto; height:auto; flex:1 1 0; min-height:0; }
   .panel.maximized .assign-grid > div, .panel.maximized .assign-grid > .scroll { min-height:0; }
   .panel.maximized .assign-grid > .scroll { height:100%; max-height:none; }
-  @media (max-width: 820px) { .assign-grid { grid-template-columns:1fr; } }
+  @media (max-width: 820px) { .assign-grid { display:block; height:auto; } .assign-samples-pane { height:380px; padding-right:0; } .assign-divider { display:none; } .assign-grid > .scroll { height:380px; margin:12px 0 0; } }
   /* Logos: VF nav/logo components expect text; make images visible */
   .vf-logo__image { display:block; height:28px; width:auto; }
   .vf-navigation__link img { display:inline-block; height:20px; width:auto; vertical-align:middle; }
@@ -255,8 +267,8 @@
            the grid below is what ENA now holds. Read-only: records change on
            the Records tab, in one place. -->
       <h3 class="log-heading">In ENA</h3>
-      <ena-browser id="studyGrid" entity="studies" mode="read" height="360"></ena-browser>
-      <p class="muted" id="studyGridEmpty">Submit studies (or click <b>Refresh from ENA</b>) to see them here.</p>
+      <ena-browser id="studyGrid" entity="studies" mode="read" height="360" style="display:none"></ena-browser>
+      <p class="muted" id="studyGridEmpty">No studies have been submitted in this session. This confirmation table only shows submissions made here; use the Records tab to browse records already in your ENA account.</p>
     </div>
   </section>
 
@@ -313,8 +325,8 @@
       <!-- Receipt above, what ENA now holds below. Read-only: records change
            on the Records tab. -->
       <h3 class="log-heading">In ENA</h3>
-      <ena-browser id="sampleGrid" entity="samples" mode="read" height="360"></ena-browser>
-      <p class="muted" id="sampleGridEmpty">Submit samples (or click <b>Refresh from ENA</b>) to see them here.</p>
+      <ena-browser id="sampleGrid" entity="samples" mode="read" height="360" style="display:none"></ena-browser>
+      <p class="muted" id="sampleGridEmpty">No samples have been submitted in this session. This confirmation table only shows submissions made here; use the Records tab to browse records already in your ENA account.</p>
     </div>
   </section>
 
@@ -354,8 +366,8 @@
             Import pairings (TSV)<input type="file" id="pairingsTsvFile" accept=".tsv,.txt" onchange="importPairingsTsv()" style="display:none">
           </label>
         </div>
-        <div class="assign-grid">
-          <div>
+        <div class="assign-grid" id="readsAssignGrid">
+          <div class="assign-samples-pane">
             <!-- Criteria on the fetch, to narrow to the right cohort before
                  pairing; the grid's own column filters and sort do the rest. -->
             <div class="row" style="margin-top:0">
@@ -367,6 +379,7 @@
             </div>
             <ena-browser id="pairSamples" entity="samples" mode="read" selection-mode="single" height="380"></ena-browser>
           </div>
+          <button class="assign-divider" id="readsAssignDivider" type="button" role="separator" aria-orientation="vertical" aria-label="Resize samples and reads panels" aria-valuemin="25" aria-valuemax="75" aria-valuenow="42" title="Drag to resize panels"></button>
           <div class="scroll"><table id="runTable"><thead></thead><tbody></tbody></table></div>
         </div>
       </div>
@@ -411,8 +424,8 @@
            process_status/process_date/process_error — whether ENA has finished
            *archiving* the read files, which registering a run does not say. -->
       <h3 class="log-heading">In ENA</h3>
-      <ena-browser id="readsGrid" entity="runs" mode="read" height="360"></ena-browser>
-      <p class="muted" id="readsGridEmpty">Submit reads (or click <b>Refresh from ENA</b>) to see them here.</p>
+      <ena-browser id="readsGrid" entity="runs" mode="read" height="360" style="display:none"></ena-browser>
+      <p class="muted" id="readsGridEmpty">No reads have been submitted in this session. This confirmation table only shows submissions made here; use the Records tab to browse records already in your ENA account.</p>
       <div class="actions">
         <button class="vf-button vf-button--secondary" onclick="refreshReadsGrid()">Refresh from ENA</button>
       </div>

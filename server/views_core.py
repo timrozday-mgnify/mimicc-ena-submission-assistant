@@ -36,7 +36,11 @@ def index(request: HttpRequest) -> FileResponse:
 def _disable_cache_for_mutable_dh_files(response: FileResponse, path: str, document_root: str) -> FileResponse:
     root = pathlib.Path(document_root).resolve()
     is_dh_asset = root == DH_DIR.resolve() or root == DH_TEMPLATES_DIR.resolve()
-    if is_dh_asset and (path.endswith("schema.json") or path == "dh-template-registry.json"):
+    # django.views.static.serve sets Last-Modified but no Cache-Control, so
+    # browsers heuristically cache our app scripts and can end up with a mix of
+    # old and new files (one calling a function another no longer defines).
+    is_app_script = root == STATIC_DIR.resolve() and path.endswith((".js", ".html", ".css"))
+    if is_app_script or (is_dh_asset and (path.endswith("schema.json") or path == "dh-template-registry.json")):
         response["Cache-Control"] = "no-store, max-age=0"
         response["Pragma"] = "no-cache"
         response["Expires"] = "0"

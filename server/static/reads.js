@@ -227,6 +227,89 @@ const PAIR_CUSTOM_COLUMNS = [
 ];
 $("pairSamples").applyConfig({ customColumns: PAIR_CUSTOM_COLUMNS });
 
+// ena-browser passes its configured height to Handsontable when it constructs
+// the row viewport. CSS can stretch the custom element, but cannot change that
+// already-created viewport, so keep the component configuration in step with
+// the flex pane's measured height.
+let pairSamplesViewportHeight = 0;
+let pairSamplesResizeFrame = null;
+function syncPairSamplesViewportHeight() {
+  pairSamplesResizeFrame = null;
+  const grid = $("pairSamples");
+  if (!grid || grid.offsetParent === null) return;
+  // ``height`` configures the Handsontable content area, while the custom
+  // element also renders its toolbar above it. Reserve that toolbar height or
+  // the final rows extend beneath the banner below this panel.
+  const toolbarHeight = grid.querySelector(".ena-browser-toolbar")?.offsetHeight || 0;
+  const height = Math.floor(grid.getBoundingClientRect().height - toolbarHeight);
+  if (height < 80 || Math.abs(height - pairSamplesViewportHeight) < 2) return;
+  pairSamplesViewportHeight = height;
+  grid.applyConfig({ height });
+}
+
+const pairSamplesPane = document.querySelector(".assign-samples-pane");
+if (pairSamplesPane && "ResizeObserver" in window) {
+  new ResizeObserver(() => {
+    if (pairSamplesResizeFrame !== null) cancelAnimationFrame(pairSamplesResizeFrame);
+    pairSamplesResizeFrame = requestAnimationFrame(syncPairSamplesViewportHeight);
+  }).observe(pairSamplesPane);
+}
+setTimeout(syncPairSamplesViewportHeight, 0);
+
+// The split between the sample chooser and read assignments is intentionally
+// local to the current layout: it is a working-space preference, not session
+// data that needs to travel with a submission.
+function setAssignSplit(leftWidth) {
+  const layout = $("readsAssignGrid");
+  const divider = $("readsAssignDivider");
+  if (!layout || !divider) return;
+  const available = layout.clientWidth - divider.offsetWidth;
+  const minLeft = 280;
+  const minRight = 320;
+  const width = Math.round(Math.min(Math.max(leftWidth, minLeft), available - minRight));
+  layout.style.setProperty("--assign-left-width", `${width}px`);
+  divider.setAttribute("aria-valuenow", String(Math.round((width / layout.clientWidth) * 100)));
+}
+
+function installAssignDivider() {
+  const layout = $("readsAssignGrid");
+  const divider = $("readsAssignDivider");
+  if (!layout || !divider) return;
+
+  divider.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    divider.classList.add("is-dragging");
+    divider.setPointerCapture(event.pointerId);
+  });
+  divider.addEventListener("pointermove", (event) => {
+    if (!divider.hasPointerCapture(event.pointerId)) return;
+    setAssignSplit(event.clientX - layout.getBoundingClientRect().left);
+  });
+  const stopDragging = (event) => {
+    if (!divider.hasPointerCapture(event.pointerId)) return;
+    divider.releasePointerCapture(event.pointerId);
+    divider.classList.remove("is-dragging");
+    redrawGrids(layout);
+  };
+  divider.addEventListener("pointerup", stopDragging);
+  divider.addEventListener("pointercancel", stopDragging);
+  divider.addEventListener("keydown", (event) => {
+    const rect = layout.getBoundingClientRect();
+    const current = parseFloat(getComputedStyle(layout).getPropertyValue("--assign-left-width")) || rect.width * 0.42;
+    const step = event.shiftKey ? 48 : 16;
+    if (event.key === "ArrowLeft") setAssignSplit(current - step);
+    else if (event.key === "ArrowRight") setAssignSplit(current + step);
+    else if (event.key === "Home") setAssignSplit(0);
+    else if (event.key === "End") setAssignSplit(rect.width);
+    else return;
+    event.preventDefault();
+    redrawGrids(layout);
+  });
+}
+
+installAssignDivider();
+
 // The only place a click sets SELECTED_SAMPLE. The pairing itself stays here:
 // the next click on a run row writes it into that row (see renderRunTable).
 $("pairSamples").addEventListener("ena-browser:selection-change", (e) => {
@@ -457,6 +540,7 @@ async function refreshReadsGrid(results = []) {
   const keep = submittedRunAccessions(results);
   const grid = $("readsGrid");
   $("readsGridEmpty").style.display = keep.length ? "none" : "block";
+  grid.style.display = keep.length ? "block" : "none";
   if (!keep.length) { grid.setRows([]); return; }
   try {
     const rows = await api(`/api/records/runs?test=${TEST}&status=all`);

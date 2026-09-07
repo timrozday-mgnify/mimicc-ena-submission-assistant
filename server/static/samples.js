@@ -80,6 +80,7 @@ async function refreshStudyGrid() {
   const keep = submittedStudyAccessions();
   const grid = $("studyGrid");
   $("studyGridEmpty").style.display = keep.length ? "none" : "block";
+  grid.style.display = keep.length ? "block" : "none";
   if (!keep.length) { grid.setRows([]); return; }
   try {
     const rows = await api(`/api/records/studies?test=${TEST}&status=all`);
@@ -139,6 +140,7 @@ async function refreshSampleGrid() {
   const keep = submittedSampleAccessions();
   const grid = $("sampleGrid");
   $("sampleGridEmpty").style.display = keep.length ? "none" : "block";
+  grid.style.display = keep.length ? "block" : "none";
   if (!keep.length) { grid.setRows([]); return; }
   try {
     const rows = await api(`/api/records/samples?test=${TEST}&status=all`);

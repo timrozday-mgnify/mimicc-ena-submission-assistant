@@ -195,6 +195,22 @@ def test_maximize_controls_for_reads_and_dataharmonizer(page):
     page.click("a.vf-tabs__link:has-text('Reads')")
     page.click("#readsAssignPanel button[aria-label='Maximize panel']")
     assert "maximized" in page.get_attribute("#readsAssignPanel", "class")
+    # The fixed panel must sit above Visual Framework's hero and tab layers;
+    # otherwise those elements are visible through the maximized pairing view.
+    page.evaluate("window.scrollTo(0, 0)")
+    stacking_check = page.evaluate(
+        """() => {
+            const panel = document.querySelector('#readsAssignPanel');
+            return ['.vf-hero__heading', '.vf-tabs__link'].map((selector) => {
+                const rect = document.querySelector(selector).getBoundingClientRect();
+                const topElement = document.elementFromPoint(
+                    rect.left + rect.width / 2, rect.top + rect.height / 2,
+                );
+                return { selector, covered: panel.contains(topElement) };
+            });
+        }"""
+    )
+    assert all(result["covered"] for result in stacking_check), stacking_check
     page.click("#readsAssignPanel button[aria-label='Minimize panel']")
     assert "maximized" not in page.get_attribute("#readsAssignPanel", "class")
 
@@ -215,6 +231,41 @@ def test_maximize_controls_for_reads_and_dataharmonizer(page):
     assert "maximized" in page.get_attribute("#expDhPanel", "class")
     page.click("#expDhPanel button[aria-label='Minimize panel']")
     assert "maximized" not in page.get_attribute("#expDhPanel", "class")
+
+
+def test_reads_pairing_splitter_resizes_full_height_grid(page):
+    page.click("a.vf-tabs__link:has-text('Reads')")
+    page.click("#readsAssignPanel button[aria-label='Maximize panel']")
+    page.wait_for_timeout(100)
+
+    grid = page.locator("#pairSamples")
+    divider = page.locator("#readsAssignDivider")
+    grid_box = grid.bounding_box()
+    workspace_box = page.locator("#readsAssignGrid").bounding_box()
+    # The sample browser consumes the left pane's available height rather than
+    # keeping its old fixed height when the panel is maximized.
+    assert grid_box["height"] > 250
+    assert workspace_box["y"] + workspace_box["height"] - (grid_box["y"] + grid_box["height"]) < 2
+    row_viewport = page.locator("#pairSamples .ht_master .wtHolder").first.bounding_box()
+    assert row_viewport["height"] > grid_box["height"] - 120
+    assert row_viewport["y"] + row_viewport["height"] <= grid_box["y"] + grid_box["height"] + 2
+
+    page.evaluate("() => banner('readsBanner', true, 'Samples loaded.')")
+    page.wait_for_timeout(100)
+    assert grid.bounding_box()["y"] + grid.bounding_box()["height"] <= page.locator("#readsBanner").bounding_box()["y"]
+    row_viewport = page.locator("#pairSamples .ht_master .wtHolder").first.bounding_box()
+    grid_box = grid.bounding_box()
+    assert row_viewport["y"] + row_viewport["height"] <= grid_box["y"] + grid_box["height"] + 2
+
+    before = page.locator(".assign-samples-pane").bounding_box()["width"]
+    divider_box = divider.bounding_box()
+    page.mouse.move(divider_box["x"] + 7, divider_box["y"] + 30)
+    page.mouse.down()
+    page.mouse.move(divider_box["x"] + 120, divider_box["y"] + 30)
+    page.mouse.up()
+
+    assert page.locator(".assign-samples-pane").bounding_box()["width"] > before + 80
+    assert int(divider.get_attribute("aria-valuenow")) > 42
 
 
 def _load_pairing_samples(page):
@@ -550,6 +601,19 @@ def test_reads_grid_confirms_submitted_runs(page):
     assert visible[0]["process_status"] == "COMPLETED"
     headers = page.eval_on_selector_all("#readsGrid th", "els => els.map((e) => e.innerText)")
     assert any("rocess status" in h for h in headers)
+
+
+def test_confirmation_grids_explain_when_nothing_was_submitted(page):
+    """Refreshing before a submission must not leave a header-only grid."""
+    for tab, grid, empty in (
+        ("Studies", "studyGrid", "studyGridEmpty"),
+        ("Samples", "sampleGrid", "sampleGridEmpty"),
+        ("Reads", "readsGrid", "readsGridEmpty"),
+    ):
+        page.click(f"a.vf-tabs__link:has-text('{tab}')")
+        page.locator(f"#vf-tabs__section--{tab.lower()} button:has-text('Refresh from ENA')").click()
+        assert page.evaluate(f"() => document.getElementById('{grid}').style.display") == "none"
+        assert "submitted in this session" in page.locator(f"#{empty}").inner_text()
 
 
 def _inject_fake_experiment_dh(page, rows):
