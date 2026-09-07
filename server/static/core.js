@@ -171,21 +171,32 @@ function redrawGrids(root = document) {
   });
 }
 
-// Handsontable focuses a hidden input as soon as a cell is pressed, and the
-// browser scrolls that input into view — which moves the whole grid under the
-// cursor (measured: ~140px) between mousedown and mouseup, so a click on one of
-// the grid's own row-action buttons never completes and the page jumps. Record
-// the page scroll on mousedown and put it back the moment that focus lands —
-// synchronously, since mouseup is next. The grid still scrolls internally.
+// Pressing a cell makes Handsontable focus it, and its own focusin handler
+// then calls TD.scrollIntoView() — which scrolls the whole page (measured:
+// ~25-140px) between mousedown and mouseup. The row-action buttons wrap onto
+// two lines in the pinned column, so a shift of even one line means the release
+// lands on a *different* action; the element refuses that, so the click does
+// nothing and the page jumps.
+//
+// Record the page scroll on mousedown and put it back on focusin — in the
+// BUBBLE phase, so it runs after Handsontable's own handler has done the
+// scrolling (a capture-phase listener runs before it and gets overridden). It
+// has to be focusin rather than mouseup: restoring during mouseup re-renders
+// the grid mid-dispatch and the element never sees the release. The grid still
+// scrolls internally.
 let _gridScroll = null;
 document.addEventListener("mousedown", (e) => {
-  _gridScroll = e.target.closest("ena-browser") ? { x: window.scrollX, y: window.scrollY } : null;
+  _gridScroll = e.target.closest?.("ena-browser") ? { x: window.scrollX, y: window.scrollY } : null;
 }, true);
 document.addEventListener("focusin", (e) => {
   if (!_gridScroll || !e.target.closest?.("ena-browser")) return;
-  window.scrollTo(_gridScroll.x, _gridScroll.y);
+  const { x, y } = _gridScroll;
   _gridScroll = null;
-}, true);
+  // In a microtask, not inline: Handsontable's own focusin handler runs after
+  // this one and does the scrolling. Microtasks drain at the end of the focus
+  // task, so this lands after that scroll and still before mouseup.
+  queueMicrotask(() => window.scrollTo(x, y));
+});
 
 // VF's scripts.js owns the tab switch; redraw after it has run.
 document.addEventListener("click", (e) => {
