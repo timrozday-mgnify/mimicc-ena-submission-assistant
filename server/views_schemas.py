@@ -149,6 +149,7 @@ def schemas_select(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"detail": "Provide either schema_id or yaml"}, status=422)
     yaml_text = req.yaml
     if yaml_text is None:
+        assert req.schema_id is not None  # guarded above
         try:
             yaml_text = schema_service.read_schema(req.schema_id)
         except ValueError as exc:

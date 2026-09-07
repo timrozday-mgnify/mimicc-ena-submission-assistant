@@ -297,7 +297,7 @@ def submit_studies(
                     _, to_submit, _ = common.classify_duplicates(records, dups, title_field="TITLE", force=True)
                     log(f"Modify mode: {len(to_submit)} prepared record(s) matched existing studies")
                     if not to_submit:
-                        error = "No matching existing studies to modify"
+                        error: str | None = "No matching existing studies to modify"
                         return {
                             "success": False,
                             "accessions": [],

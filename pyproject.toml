@@ -29,9 +29,13 @@ dependencies = [
 # pytest and Playwright from .venv.
 [dependency-groups]
 dev = [
+    "mypy>=1.14",
+    "playwright",
+    "pre-commit>=4",
     "pytest",
     "pytest-asyncio",
-    "playwright",
+    "ruff>=0.16",
+    "types-PyYAML",
 ]
 
 [build-system]
@@ -48,5 +52,22 @@ line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+
+# None of these ship a py.typed marker; the siblings are pinned to git tags
+# that predate their markers.
+[[tool.mypy.overrides]]
+module = [
+    "django.*",
+    "ena_api.*",
+    "ena_submission_toolkit.*",
+    "linkml.*",
+    "linkml_lib.*",
+    "linkml_runtime.*",
+    "pendulum.*",
+]
+ignore_missing_imports = true

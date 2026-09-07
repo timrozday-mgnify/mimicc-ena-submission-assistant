@@ -1,18 +1,21 @@
 # Vendored build artefacts (the ena-browser bundle, like the DataHarmonizer
 # one) are committed as-is: reformatting them corrupts them, and the size
 # ceiling is not theirs to meet.
-exclude: '^server/static/vendor/'
+# assets/ena_schema/ are upstream ENA XSDs, vendored verbatim.
+exclude: '^(server/static/vendor/|assets/ena_schema/)'
 
+# Standardised across the MIMICC/ENA repos. When bumping a rev, bump it in all
+# of them together so a file formatted in one repo is not reformatted by another.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
         args: ["--allow-multiple-documents"]
-      - id: check-json
       - id: check-toml
+      - id: check-json
       - id: check-added-large-files
         args: ["--maxkb=1000"]
       - id: check-merge-conflict
@@ -21,26 +24,36 @@ repos:
       - id: detect-private-key
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.16
+    rev: v0.16.6
     hooks:
-      - id: ruff
+      - id: ruff-check
         args: ["--fix"]
       - id: ruff-format
 
+  # Repo-specific: this project ships shell entrypoints and task scripts.
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.10.0.1
+    rev: v0.11.0.1
     hooks:
       - id: shellcheck
         args: ["-x"]
 
   - repo: local
     hooks:
-      # Runs on push (not every commit) since it needs the project's .venv
-      # (see README's Development section) and is slower than the lint hooks
+      # Local rather than mirrors-mypy: it type-checks against the repo's own
+      # uv.lock instead of a hand-maintained additional_dependencies list that
+      # silently drifts from the real dependency set.
+      - id: mypy
+        name: mypy
+        entry: uv run --frozen mypy
+        language: system
+        pass_filenames: false
+        args: ["server", "tests"]
+
+      # Runs on push (not every commit) since it is slower than the lint hooks
       # above.
       - id: pytest
         name: pytest
-        entry: .venv/bin/python -m pytest -q
+        entry: uv run --frozen pytest -q
         language: system
         pass_filenames: false
         stages: [pre-push]

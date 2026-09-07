@@ -24,3 +24,6 @@ htmlcov/
 # Editors
 .idea/
 .vscode/
+
+# Serena tool state
+.serena/

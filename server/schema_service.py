@@ -185,7 +185,7 @@ def _template_class_name(schema: dict[str, Any]) -> str:
         raise ValueError("Schema has no renderable classes")
 
     schema_name = schema.get("name")
-    if schema_name in classes and schema_name not in {"Container", "dh_interface"}:
+    if isinstance(schema_name, str) and schema_name in classes and schema_name not in {"Container", "dh_interface"}:
         return schema_name
 
     dh_classes = [

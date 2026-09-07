@@ -1,0 +1,35 @@
+# Slow (builds the images: DataHarmonizer clone + npm build, minutes) so it is
+# kept out of the fast lint/test workflows and off pushes to main.
+name: Compose
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      COMPOSE_TEST: "1"
+      # docker-compose.yml pins linux/arm64 for Apple Silicon development;
+      # GitHub's runners are amd64.
+      MIMICC_PLATFORM: linux/amd64
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv + Python
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --all-extras
+
+      - name: Install Playwright browsers
+        run: uv run playwright install --with-deps chromium
+
+      - name: Compose UI tests
+        run: uv run pytest tests/test_compose_ui.py -vv
