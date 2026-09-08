@@ -462,7 +462,7 @@ wheels = [
 [[package]]
 name = "ena-api-client"
 version = "0.1.3"
-source = { git = "https://github.com/timrozday-mgnify/ena-api-client.git?rev=v0.1.3#4517b6f350e77055a27108f5b49f21373eccab31" }
+source = { git = "https://github.com/timrozday-mgnify/ena-api-client.git?rev=v0.1.3#870180e77197a096d79d5b6745c5757221f31cb9" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
@@ -481,7 +481,7 @@ dependencies = [
 [[package]]
 name = "ena-submission-toolkit"
 version = "0.1.4"
-source = { git = "https://github.com/timrozday-mgnify/ena-submission-toolkit.git?rev=v0.1.4#96ea7993e4bf3a8d198c21721d5a6b551f128b14" }
+source = { git = "https://github.com/timrozday-mgnify/ena-submission-toolkit.git?rev=v0.1.4#9d42c4d043e5d0cc7a1ee7f1d2ca73845e71d4a5" }
 dependencies = [
     { name = "ena-api-client" },
     { name = "ena-api-handler" },
