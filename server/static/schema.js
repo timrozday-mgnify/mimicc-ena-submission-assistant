@@ -181,9 +181,18 @@ let DHTB_PENDING_YAML = null; // {yaml, name} queued until dhtb.ready fires
 let DHTB_EXPORT_INTENT = null; // "save" | "export" — which action requested the pending dhtb.exportYaml
 
 function initSchemaEditorFrame() {
+  // dhtb follows the OS colour scheme unless the host tells it otherwise, so
+  // keep it pinned to this page's data-theme (and to any later change).
+  new MutationObserver(syncDhtbTheme).observe(document.documentElement,
+    { attributes: true, attributeFilter: ["data-theme"] });
   const url = HEALTH.dhtb_url;
   if (!url) { $("schemaEditorMissing").style.display = "block"; return; }
   $("schemaEditorFrame").src = url;
+}
+
+function syncDhtbTheme() {
+  if (!DHTB_READY) return; // resent from the dhtb.ready handler
+  postToDhtb("dhtb.setTheme", { theme: document.documentElement.dataset.theme === "dark" ? "dark" : "light" });
 }
 
 function loadSchemaIntoEditor(yamlText, name) {
@@ -207,6 +216,7 @@ window.addEventListener("message", (ev) => {
   if (msg.type === "dhtb.ready") {
     DHTB_READY = true;
     $("schemaEditorMissing").style.display = "none";
+    syncDhtbTheme();
     if (DHTB_PENDING_YAML) { postToDhtb("dhtb.loadYaml", DHTB_PENDING_YAML); DHTB_PENDING_YAML = null; }
   } else if (msg.type === "dhtb.exported") {
     window.__dhtbExportedYaml = msg.yaml;

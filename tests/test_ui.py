@@ -719,3 +719,42 @@ def test_ena_browser_element_registered(page, live_server_url):
     resp = page.request.get(f"{live_server_url}/static/vendor/ena-browser/ena-browser.iife.js")
     assert resp.status == 200
     assert page.evaluate("() => !!window.customElements.get('ena-browser')")
+
+
+def test_schema_editor_follows_the_app_theme(page):
+    # dhtb follows the OS colour scheme on its own; the app pins it to its own
+    # data-theme on ready and on every later change. The sidecar isn't running
+    # here, so stand a same-origin about:blank frame in for it and drive the
+    # bridge with a faked dhtb.ready.
+    page.click("a.vf-tabs__link:has-text('Schema')")
+    page.evaluate("""async () => {
+      HEALTH.dhtb_url = '';  // accept the faked ready from this same-origin stub
+      const f = document.getElementById('schemaEditorFrame');
+      f.src = 'about:blank';
+      await new Promise((r) => { f.onload = r; });
+      window.__dhtbMsgs = [];
+      f.contentWindow.addEventListener('message', (e) => window.__dhtbMsgs.push(e.data));
+      window.postMessage({ type: 'dhtb.ready' }, '*');
+    }""")
+    page.wait_for_function("() => (window.__dhtbMsgs || []).some((m) => m.type === 'dhtb.setTheme')")
+    assert page.evaluate("window.__dhtbMsgs.at(-1).theme") == "light"
+
+    page.evaluate("document.documentElement.dataset.theme = 'dark'")
+    page.wait_for_function("() => window.__dhtbMsgs.at(-1).theme === 'dark'")
+
+
+def test_theme_toggle_switches_and_persists(page):
+    # The header button rewrites <html data-theme> — everything that themes
+    # itself (this page's variables, <ena-browser>, the dhtb sidecar) follows
+    # that one attribute — and the choice is remembered for the next load.
+    assert page.get_attribute("html", "data-theme") == "light"
+    page.click("#themeToggle")
+    assert page.get_attribute("html", "data-theme") == "dark"
+    assert page.inner_text("#themeToggle").strip() == "Light"
+    assert page.evaluate("localStorage.getItem('mimicc-theme')") == "dark"
+
+    page.reload()
+    _open_session(page)
+    assert page.get_attribute("html", "data-theme") == "dark"
+    page.click("#themeToggle")
+    assert page.get_attribute("html", "data-theme") == "light"

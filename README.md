@@ -398,11 +398,19 @@ re-break):
 
 Theming needs no wiring: the element reads the same CSS custom properties this app
 already defines (`--bg`, `--panel`, `--line`, `--fg`, `--muted`, `--accent`, …) and
-honours `data-theme`. This app is light-only and stamps `data-theme="light"` on
-`<html>` so a dark OS setting cannot give a dark grid inside a white page. Adding a
-real light/dark switch later is a `:root[data-theme="dark"]` palette block plus a
-header control that rewrites that attribute — the element follows with no extra
-wiring, unlike the DataHarmonizer iframes, which need `propagateThemeToFrames()`.
+honours `data-theme`, which is the app's single source of truth for light/dark.
+
+`theme.js` owns it: `initTheme()` (called first in `boot.js`) stamps `<html
+data-theme>` from `localStorage["mimicc-theme"]`, falling back to the OS
+`prefers-color-scheme`, and the header's **Dark**/**Light** button
+(`toggleTheme()`) rewrites it. The dark palette is the `:root[data-theme="dark"]`
+block in `index.html`, plus overrides for the Visual Framework surfaces that
+hard-code light colours (`.vf-card`, form controls, tabs, banners) — the hero's
+green band is left alone in both themes. `<ena-browser>` follows the attribute
+with no extra wiring; the schema editor sidecar is pushed the resolved theme by
+`schema.js` `syncDhtbTheme()` (`dhtb.setTheme` on `dhtb.ready` and from a
+`data-theme` MutationObserver), since dhtb otherwise follows the OS setting. The
+**DataHarmonizer iframes stay light** — that bundle has no dark theme.
 
 Refresh the vendored bundle with `task vendor:ena-browser` after bumping
 `ENA_BROWSER_REF` in `Taskfile.yml`; the two downloaded files are committed (like
