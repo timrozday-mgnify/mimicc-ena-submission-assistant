@@ -21,6 +21,13 @@ import yaml
 from linkml_lib import dataharmonizer_compile, pipeline
 from linkml_lib import io as linkml_io
 
+# Namespace stamped into the id: and from_schema: of schemas built here, and
+# the namespace the schemas committed in schemas/ carry. Passed explicitly
+# rather than left to linkml_lib.io.DEFAULT_BASE_URI: these schemas belong to
+# this repo, and the default would otherwise make what we build depend on which
+# linkml-lib tag happens to be pinned.
+SCHEMA_BASE_URI = "https://github.com/timrozday-mgnify/mimicc-ena-submission-assistant"
+
 # Fixed DataHarmonizer template folders the two grids are pointed at
 # (server/static/app.js: initDhFrames). Selecting a schema for a role
 # overwrites that folder's schema.json rather than registering a new folder.
@@ -162,7 +169,7 @@ def import_build(
     if not paths:
         raise ValueError("No input sources given")
 
-    schema = pipeline.build(paths, name=name, title=title, include=include, exclude=exclude)
+    schema = pipeline.build(paths, base_uri=SCHEMA_BASE_URI, name=name, title=title, include=include, exclude=exclude)
     _normalise_slot_source_annotations(schema)
     return linkml_io.dump_yaml(schema)
 

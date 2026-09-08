@@ -9,6 +9,7 @@ sample/experiment DataHarmonizer grids. Skipped automatically when the heavy
 from __future__ import annotations
 
 import json
+import pathlib
 
 import pytest
 
@@ -76,6 +77,30 @@ def test_import_build_merges_checklist_and_xsd_sources():
     schema = _yaml.safe_load(yaml_text)
     assert schema.get("slots")
     assert all("source" not in (slot.get("annotations") or {}) for slot in schema["slots"].values())
+
+
+def test_import_build_namespaces_under_this_repo():
+    """The base URI is ours, not whatever linkml-lib's default happens to be.
+
+    linkml-lib is pinned by tag, so leaving base_uri unset would make the
+    namespace of what we build depend on which tag is installed — and disagree
+    with the schemas committed in schemas/.
+    """
+    import yaml as _yaml
+
+    schema = _yaml.safe_load(schema_service.import_build(source_ids=["ERC000025.xml"]))
+    assert schema["id"].startswith(schema_service.SCHEMA_BASE_URI)
+    assert "ena-submission-dataharmonizer" not in schema["id"]
+
+
+def test_committed_schemas_share_the_import_namespace():
+    """schemas/ and anything rebuilt from it must not drift apart."""
+    import yaml as _yaml
+
+    schemas_dir = pathlib.Path(__file__).resolve().parent.parent / "schemas"
+    for path in sorted(schemas_dir.glob("*.yaml")):
+        schema = _yaml.safe_load(path.read_text())
+        assert schema["id"].startswith(schema_service.SCHEMA_BASE_URI), path.name
 
 
 def test_import_build_raises_without_any_inputs():
