@@ -462,7 +462,7 @@ wheels = [
 [[package]]
 name = "ena-api-client"
 version = "0.1.3"
-source = { git = "https://github.com/timrozday-mgnify/ena-api-client.git?rev=v0.1.3#d6910cf2293277b1873464b82df7e1da2734b809" }
+source = { git = "https://github.com/timrozday-mgnify/ena-api-client.git?rev=v0.1.3#4517b6f350e77055a27108f5b49f21373eccab31" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
@@ -481,7 +481,7 @@ dependencies = [
 [[package]]
 name = "ena-submission-toolkit"
 version = "0.1.4"
-source = { git = "https://github.com/timrozday-mgnify/ena-submission-toolkit.git?rev=v0.1.4#3006756ac90176853c8459e4e7781d05998a0001" }
+source = { git = "https://github.com/timrozday-mgnify/ena-submission-toolkit.git?rev=v0.1.4#96ea7993e4bf3a8d198c21721d5a6b551f128b14" }
 dependencies = [
     { name = "ena-api-client" },
     { name = "ena-api-handler" },
@@ -969,7 +969,7 @@ wheels = [
 [[package]]
 name = "linkml-lib"
 version = "0.1.0"
-source = { git = "https://github.com/timrozday-mgnify/linkml-lib.git?rev=v0.1.0#89b059a1d4aa8326293323669d85ece5273c1791" }
+source = { git = "https://github.com/timrozday-mgnify/linkml-lib.git?rev=v0.1.0#49469d80106b9fec1bebc771bbe6f25ff4379f7b" }
 dependencies = [
     { name = "linkml" },
     { name = "linkml-runtime" },
