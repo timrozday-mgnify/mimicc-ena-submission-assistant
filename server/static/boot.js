@@ -15,6 +15,7 @@ async function init() {
 }
 
 async function startApp() {
+  initTheme();               // stamp <html data-theme> before anything paints
   restoreCreds();            // pull Webin creds saved for this browser tab (if any)
   await refreshHealth();
   captureInitialDefaults();  // pristine blank-slate snapshot, used to reset between sessions

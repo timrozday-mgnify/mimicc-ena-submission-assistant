@@ -1,5 +1,29 @@
 "use strict";
 
+// ---------------------------------------------------------------------------
+// Light/dark: <html data-theme> is the single source of truth. <ena-browser>
+// and the dhtb sidecar (see schema.js syncDhtbTheme) both follow it; the
+// DataHarmonizer bundle is light-only and stays light.
+// ---------------------------------------------------------------------------
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem("mimicc-theme", theme);
+  const btn = $("themeToggle");
+  if (btn) {
+    btn.textContent = theme === "dark" ? "Light" : "Dark";
+    btn.setAttribute("aria-pressed", String(theme === "dark"));
+  }
+}
+
+function toggleTheme() {
+  applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+}
+
+function initTheme() {
+  applyTheme(localStorage.getItem("mimicc-theme")
+    || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+}
+
 function stabilizeDataHarmonizerFrameRows(frameId) {
   const frame = $(frameId);
   if (!frame) return;
