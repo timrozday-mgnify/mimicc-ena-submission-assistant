@@ -322,7 +322,8 @@ function startExpDhAutosave() {
     clearInterval(poll);
     if (expDhAutosaveTimer) clearInterval(expDhAutosaveTimer);
     expDhAutosaveTimer = setInterval(autosaveExpDhExport, DH_AUTOSAVE_INTERVAL_MS);
-    syncPairingsToExperimentDh(); // catch up on any pairings made before this grid was ready
+    EXP_SYNCED.clear();           // fresh grid — nothing in it is known-synced
+    syncPairingsToExperimentDhNow(); // catch up on any pairings made before this grid was ready
   }, 500);
 }
 $("expDhFrame").addEventListener("load", startExpDhAutosave);
@@ -397,11 +398,47 @@ function reloadStudyDhFrame() {
 // Push each pairing row's NAME+SAMPLE into the experiment grid, touching
 // only those two columns (upsertRow) so anything already filled in for that
 // row — manually, or via the schema's own ifabsent defaults — is preserved.
+//
+// Each upsertRow is a Handsontable round trip, so re-pushing every row on
+// every pairing edit made the grid crawl. Two fixes: only push rows whose
+// NAME/SAMPLE actually changed since the last push (EXP_SYNCED), and coalesce
+// bursts of edits into one pass. The auto-sync checkbox turns the automatic
+// pass off entirely; the Update button forces one.
+const EXP_SYNCED = new Map();  // NAME -> last SAMPLE pushed to the grid
+let expSyncTimer = null;
+
+function expAutoSyncOn() { return $("expDhAutoSync")?.checked !== false; }
+
 function syncPairingsToExperimentDh() {
+  if (!expAutoSyncOn()) return;
+  if (expSyncTimer) clearTimeout(expSyncTimer);
+  expSyncTimer = setTimeout(() => { expSyncTimer = null; syncPairingsToExperimentDhNow(); }, 200);
+}
+
+function syncPairingsToExperimentDhNow() {
   const dh = expDhApi();
-  if (!dh) return;
+  if (!dh) return 0;
+  const entries = [];
   RUN_ROWS.forEach((row) => {
     if (!row.NAME) return;
-    try { dh.upsertRow(EXP_KEY_TITLE, row.NAME, { [EXP_SAMPLE_TITLE]: row.SAMPLE || "" }); } catch { /* ignore */ }
+    const sample = row.SAMPLE || "";
+    if (EXP_SYNCED.get(row.NAME) === sample) return;
+    entries.push({ key: row.NAME, values: { [EXP_SAMPLE_TITLE]: sample } });
   });
+  if (!entries.length) return 0;
+  try {
+    // upsertRows does the whole batch in one render/validation pass. Older
+    // bundles only have the per-row call — fall back rather than fail.
+    if (dh.upsertRows) dh.upsertRows(EXP_KEY_TITLE, entries);
+    else entries.forEach((e) => dh.upsertRow(EXP_KEY_TITLE, e.key, e.values));
+  } catch { return 0; }
+  entries.forEach((e) => EXP_SYNCED.set(e.key, e.values[EXP_SAMPLE_TITLE]));
+  return entries.length;
+}
+
+/** Update button: sync regardless of the auto-sync toggle. */
+function updateExperimentDhNow() {
+  if (!expDhApi()) { banner("readsBanner", false, "Experiment DataHarmonizer isn't ready yet."); return; }
+  const pushed = syncPairingsToExperimentDhNow();
+  banner("readsBanner", true, pushed ? `Updated ${pushed} experiment row(s).` : "Experiment metadata already up to date.");
 }

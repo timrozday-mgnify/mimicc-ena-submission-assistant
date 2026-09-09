@@ -714,6 +714,132 @@ def test_reads_submit_blocks_without_matching_experiment_row(page):
     assert "No experiment metadata row found" in page.inner_text("#submitReadsBanner")
 
 
+def _inject_recording_experiment_dh(page, batched=True):
+    """A fake experiment grid that records the upsert calls the sync makes, so
+    it can be asserted on those rather than on grid contents. ``batched=False``
+    stands in for a DataHarmonizer bundle predating upsertRows."""
+    page.evaluate(
+        """(batched) => {
+            const frame = document.getElementById('expDhFrame');
+            window.__upserts = [];
+            window.__batches = [];
+            const dh = {
+                ready: true,
+                getExportJson: () => ({ Container: { MIMICC_Experiment: [] } }),
+                upsertRow: (keyCol, key, patch) => window.__upserts.push([key, patch]),
+            };
+            if (batched) {
+                dh.upsertRows = (keyCol, entries) => {
+                    window.__batches.push(entries);
+                    entries.forEach((e) => window.__upserts.push([e.key, e.values]));
+                };
+            }
+            frame.contentWindow.dataHarmonizer = dh;
+            EXP_SYNCED.clear();
+        }""",
+        batched,
+    )
+
+
+def test_experiment_sync_sends_one_batched_upsert(page):
+    """Every changed row goes over in a single upsertRows call — the batched
+    form does one render/validation pass instead of one per row."""
+    page.click("a.vf-tabs__link:has-text('Reads')")
+    page.evaluate(
+        """() => {
+            RUN_ROWS = [
+                { NAME: "r1", files: [], paired: false, SAMPLE: "ERS1", STUDY: "" },
+                { NAME: "r2", files: [], paired: false, SAMPLE: "ERS2", STUDY: "" },
+                { NAME: "r3", files: [], paired: false, SAMPLE: "ERS3", STUDY: "" },
+            ];
+        }"""
+    )
+    _inject_recording_experiment_dh(page)
+    page.evaluate("() => syncPairingsToExperimentDhNow()")
+
+    batches = page.evaluate("() => window.__batches")
+    assert len(batches) == 1
+    assert [e["key"] for e in batches[0]] == ["r1", "r2", "r3"]
+    assert batches[0][0]["values"] == {"Sample alias": "ERS1"}
+
+
+def test_experiment_sync_falls_back_to_per_row_upsert(page):
+    """An older bundle without upsertRows must still sync, one row at a time."""
+    page.click("a.vf-tabs__link:has-text('Reads')")
+    page.evaluate(
+        """() => {
+            RUN_ROWS = [
+                { NAME: "r1", files: [], paired: false, SAMPLE: "ERS1", STUDY: "" },
+                { NAME: "r2", files: [], paired: false, SAMPLE: "ERS2", STUDY: "" },
+            ];
+        }"""
+    )
+    _inject_recording_experiment_dh(page, batched=False)
+    page.evaluate("() => syncPairingsToExperimentDhNow()")
+
+    assert page.evaluate("() => window.__batches") == []
+    assert page.evaluate("() => window.__upserts.map((u) => u[0])") == ["r1", "r2"]
+
+
+def test_experiment_sync_only_pushes_changed_pairings(page):
+    """Re-pushing every row on every edit is what made the grid crawl."""
+    page.click("a.vf-tabs__link:has-text('Reads')")
+    page.evaluate(
+        """() => {
+            RUN_ROWS = [
+                { NAME: "r1", files: [], paired: false, SAMPLE: "ERS1", STUDY: "ERP1" },
+                { NAME: "r2", files: [], paired: false, SAMPLE: "ERS2", STUDY: "ERP1" },
+            ];
+        }"""
+    )
+    _inject_recording_experiment_dh(page)
+
+    page.evaluate("() => syncPairingsToExperimentDhNow()")
+    assert page.evaluate("() => window.__upserts.map((u) => u[0])") == ["r1", "r2"]
+
+    # Nothing changed — no work at all.
+    page.evaluate("() => syncPairingsToExperimentDhNow()")
+    assert page.evaluate("() => window.__upserts.length") == 2
+
+    # One pairing changed — exactly one push.
+    page.evaluate("() => { RUN_ROWS[1].SAMPLE = 'ERS9'; syncPairingsToExperimentDhNow(); }")
+    assert page.evaluate("() => window.__upserts.slice(2)") == [["r2", {"Sample alias": "ERS9"}]]
+
+
+def test_experiment_sync_toggle_and_update_button(page):
+    page.click("a.vf-tabs__link:has-text('Reads')")
+    page.evaluate("""() => { RUN_ROWS = [{ NAME: "r1", files: [], paired: false, SAMPLE: "ERS1", STUDY: "" }]; }""")
+    _inject_recording_experiment_dh(page)
+
+    page.uncheck("#expDhAutoSync")
+    page.evaluate("() => syncPairingsToExperimentDh()")
+    page.wait_for_timeout(300)
+    assert page.evaluate("() => window.__upserts.length") == 0
+
+    page.click("#expDhUpdateBtn")
+    assert page.evaluate("() => window.__upserts") == [["r1", {"Sample alias": "ERS1"}]]
+
+    page.check("#expDhAutoSync")
+    page.evaluate("() => { RUN_ROWS[0].SAMPLE = 'ERS2'; syncPairingsToExperimentDh(); }")
+    page.wait_for_function("() => window.__upserts.length === 2")
+
+
+def test_experiment_auto_sync_toggle_persists_in_the_session(page):
+    page.click("a.vf-tabs__link:has-text('Reads')")
+    page.uncheck("#expDhAutoSync")
+    first = page.evaluate("() => SESSION.id")
+    page.evaluate("() => saveSessionNow()")
+    page.wait_for_timeout(300)
+
+    # A fresh session gets the default (on), not this one's choice.
+    page.evaluate("() => openSessionModal()")
+    _open_session(page)
+    assert page.is_checked("#expDhAutoSync")
+
+    page.evaluate("(id) => openSession(id)", first)
+    page.wait_for_function("() => !document.getElementById('expDhAutoSync').checked")
+
+
 def test_ena_browser_element_registered(page, live_server_url):
     """The vendored bundle is served and defines the custom element."""
     resp = page.request.get(f"{live_server_url}/static/vendor/ena-browser/ena-browser.iife.js")
