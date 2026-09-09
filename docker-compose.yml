@@ -48,7 +48,7 @@ services:
       # Pinned tags — see README "Pinned dependency versions" for how to bump these.
       context: https://github.com/timrozday-mgnify/dataharmonizer-template-builder.git#v0.1.0
       additional_contexts:
-        dataharmonizer-src: https://github.com/timrozday-mgnify/DataHarmonizer.git#v2.1.0-mimicc
+        dataharmonizer-src: https://github.com/timrozday-mgnify/DataHarmonizer.git#v2.1.1-mimicc
         linkml-lib: https://github.com/timrozday-mgnify/linkml-lib.git#v0.1.0
         dh-builder-lib: https://github.com/timrozday-mgnify/dh-builder.git#v0.1.0
     container_name: mimicc-dhtb

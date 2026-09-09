@@ -168,6 +168,65 @@ def test_dh_grid_still_takes_keystrokes_beside_an_ena_browser(page):
     assert "typed-here" in cell.inner_text()
 
 
+def test_read_pairings_sync_into_the_real_experiment_grid(page):
+    """The pairing sync against the real bundle: batched upsertRows writes the
+    rows, and re-syncing a changed pairing updates that row in place rather
+    than appending a duplicate. Only the real DataHarmonizer can show that —
+    test_ui.py can only assert the calls the sync makes.
+
+    Runs before the schema-selection test on purpose: that one compiles a
+    different schema into the experiment folder, and this needs the default
+    mimicc_experiment one (it has the Experiment name / Sample alias columns).
+    """
+    page.click("a.vf-tabs__link:has-text('Reads')")
+    _wait_for_dh_iframe_ready(page, "#expDhFrame")
+    assert (
+        page.evaluate("() => typeof document.getElementById('expDhFrame').contentWindow.dataHarmonizer.upsertRows")
+        == "function"
+    )
+
+    def read_back(keys):
+        return page.evaluate(
+            """(keys) => {
+                const dh = document.getElementById('expDhFrame').contentWindow.dataHarmonizer;
+                return {
+                    rowCount: dh.getRowCount(),
+                    rows: keys.map((key) => {
+                        const row = dh.findRowIndex('Experiment name', key);
+                        return [row, dh.getCellValue(row, 'Sample alias')];
+                    }),
+                };
+            }""",
+            keys,
+        )
+
+    pushed = page.evaluate(
+        """() => {
+            RUN_ROWS = [
+                { NAME: "cr1", files: [], paired: false, SAMPLE: "ERS1", STUDY: "" },
+                { NAME: "cr2", files: [], paired: false, SAMPLE: "ERS2", STUDY: "" },
+                { NAME: "cr3", files: [], paired: false, SAMPLE: "ERS3", STUDY: "" },
+            ];
+            EXP_SYNCED.clear();
+            return syncPairingsToExperimentDhNow();
+        }"""
+    )
+    assert pushed == 3
+
+    first = read_back(["cr1", "cr2", "cr3"])
+    assert [value for _, value in first["rows"]] == ["ERS1", "ERS2", "ERS3"]
+    rows = [row for row, _ in first["rows"]]
+    assert len(set(rows)) == 3 and all(row >= 0 for row in rows)
+
+    # One pairing re-assigned: that row is rewritten, no new row appears, and
+    # the untouched rows keep their values.
+    assert page.evaluate("() => { RUN_ROWS[1].SAMPLE = 'ERS9'; return syncPairingsToExperimentDhNow(); }") == 1
+    second = read_back(["cr1", "cr2", "cr3"])
+    assert [value for _, value in second["rows"]] == ["ERS1", "ERS9", "ERS3"]
+    assert [row for row, _ in second["rows"]] == rows
+    assert second["rowCount"] == first["rowCount"]
+
+
 def _wait_for_dh_iframe_ready(page, frame_id):
     page.wait_for_function(
         """(frameId) => {

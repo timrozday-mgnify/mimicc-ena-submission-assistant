@@ -222,11 +222,14 @@ reopening a session the saved export is loaded **back into the grid** via
 DataHarmonizer doesn't expose it; it's a small patch applied directly to the `DataHarmonizer`
 checkout pinned as the `dataharmonizer-src` build context:
 - `lib/Toolbar.js`: `buildExportJson`/`getExportJson`/`loadExportJson` (full-grid export/import),
-  plus a cell-level API (`getCellValue`, `setCellValue`, `findRowIndex`, `addRow`, `upsertRow`) used
-  to sync individual columns without clobbering the rest of a row.
+  plus a cell-level API (`getCellValue`, `setCellValue`, `findRowIndex`, `addRow`, `upsertRow`,
+  `upsertRows`) used to sync individual columns without clobbering the rest of a row. `upsertRows`
+  is the batched form (`[{key, values}, …]` against one key column): one key-column scan and a
+  single `setDataAtCell` inside one `batchRender`, instead of a scan + render + validation pass per
+  row — the Reads tab's pairing sync would otherwise crawl on a large scan.
 - `web/index.js`: expose all of the above on `window.dataHarmonizer` once the grid loads
   (`{ready, getExportJson, loadExportJson, getCellValue, setCellValue, getRowCount, findRowIndex,
-  addRow, upsertRow}`).
+  addRow, upsertRow, upsertRows}`).
 
 Without this patch, the export button shows "isn't ready yet" and the Samples tab falls back to the
 manual upload/paste flow; the experiment-metadata panel (below) similarly can't sync or merge.

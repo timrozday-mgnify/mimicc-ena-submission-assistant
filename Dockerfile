@@ -1,7 +1,7 @@
 # Pinned refs for sibling repos this image pulls at build time. Bump these
 # (and the matching git+https pins in pyproject.toml) when a sibling repo
 # cuts a new tag — see README "Pinned dependency versions".
-ARG DATAHARMONIZER_REF=v2.1.0-mimicc
+ARG DATAHARMONIZER_REF=v2.1.1-mimicc
 ARG DH_BUILDER_REF=v0.1.0
 
 # Pinned sibling-repo sources, replacing the old additional_contexts/vendor.sh

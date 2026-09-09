@@ -94,7 +94,7 @@ schema* that drives the grids.
 on the user's machine; `dh-builder` rebuilds the DataHarmonizer bundle whenever the
 schema changes. Both are decoupled over HTTP/JSON or Docker, not Python imports.
 
-**Vendored UI engine.** The `DataHarmonizer` fork (pinned at `v2.1.0-mimicc`) is the
+**Vendored UI engine.** The `DataHarmonizer` fork (pinned at `v2.1.1-mimicc`) is the
 Handsontable-based spreadsheet that both apps embed.
 
 ---
@@ -145,7 +145,7 @@ LinkML YAML — plus produces a DataHarmonizer preview. Runs standalone or embed
   (Handsontable wrapper), `api.ts` (HTTP client), `tableSync.ts` (client-side mirror
   of the backend sync logic).
 - **Dependencies:** `linkml-lib @ ...@v0.1.0`, the `DataHarmonizer` fork
-  (`file:../DataHarmonizer` for dev, `v2.1.0-mimicc` in Docker), `dh-builder-lib` for
+  (`file:../DataHarmonizer` for dev, `v2.1.1-mimicc` in Docker), `dh-builder-lib` for
   on-demand bundle rebuilds, `handsontable` / `@handsontable/react-wrapper` 17.1.0.
 - **Integration:** embedded by the assistant as a cross-origin iframe; they exchange
   schema YAML over `postMessage` (`dhtb.loadYaml` → `dhtb.exported`).
@@ -210,7 +210,7 @@ by the assistant (`POST /api/dh/build`) and by dhtb (`TEMPLATE=template_builder_
 ### 4.8 DataHarmonizer (fork)
 
 The external **JavaScript** spreadsheet editor/validator from CIDGOH, forked and
-pinned at **`v2.1.0-mimicc`**. It provides the **Handsontable**-based grid UI that
+pinned at **`v2.1.1-mimicc`**. It provides the **Handsontable**-based grid UI that
 both apps embed for metadata entry. It is not edited as part of normal work; it is
 built into a bundle by `dh-builder` and consumed as a static asset (assistant) or via
 `@handsontable/react-wrapper` (dhtb).
@@ -290,7 +290,7 @@ and edits* schemas interactively (React + TS pays for itself).
 
 | Dependency | Where | Role |
 |---|---|---|
-| **DataHarmonizer** (fork `v2.1.0-mimicc`) | assistant, dhtb, dh-builder | Browser spreadsheet editor/validator for metadata entry; the UI engine both apps embed |
+| **DataHarmonizer** (fork `v2.1.1-mimicc`) | assistant, dhtb, dh-builder | Browser spreadsheet editor/validator for metadata entry; the UI engine both apps embed |
 | **Handsontable** 17.1.0 | inside DataHarmonizer; dhtb directly | The spreadsheet grid widget DataHarmonizer is built on |
 | **LinkML / linkml-runtime** (≥1.7 / ≥1.8) | via linkml-lib | Schema metamodel, validation and runtime used for all schema work |
 | **Django** 5.x | assistant, dhtb | Backend framework: ORM, HTTP, auth, sessions, CSRF, cache abstraction |
@@ -322,7 +322,7 @@ and edits* schemas interactively (React + TS pays for itself).
   the Reports API field names (mirrored from `ena-api-client`'s models) and the ENA
   status values.
 - **DataHarmonizer is built, not imported.** A Docker build stage clones the fork
-  (`...DataHarmonizer.git#v2.1.0-mimicc`) and runs `dh-builder`'s build steps
+  (`...DataHarmonizer.git#v2.1.1-mimicc`) and runs `dh-builder`'s build steps
   (Node/Yarn) to produce a bundle, which is volume-mounted into the assistant at
   `server/static/dh/`.
 - **read-helper-app and dhtb run as separate Docker Compose services.** read-helper-app is on

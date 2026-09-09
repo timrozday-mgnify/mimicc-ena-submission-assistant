@@ -412,6 +412,8 @@
       <div class="panel-head">
         <h2>3 · Enter experiment metadata (DataHarmonizer)</h2>
         <div class="inline">
+          <label class="muted" title="Push pairing NAME/SAMPLE into this grid as you edit them"><input type="checkbox" id="expDhAutoSync" checked style="width:auto"> Auto-update from pairings</label>
+          <button class="vf-button vf-button--secondary" type="button" id="expDhUpdateBtn" onclick="updateExperimentDhNow()">Update from pairings</button>
           <button class="vf-button vf-button--secondary" type="button" id="expDhExportBtn" onclick="exportExpDhNow()">Save metadata</button>
           <span class="muted" id="expDhSavedIndicator">Last saved: never</span>
           <button class="icon-btn maximize-toggle-btn" type="button" onclick="togglePanelMax('expDhPanel')" title="Maximize panel" aria-label="Maximize panel">⛶</button>

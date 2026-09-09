@@ -180,7 +180,7 @@ const _FIELD_IDS = [
 ];
 // recWrite is deliberately absent: write mode is never restored from a session.
 const _CHECK_IDS = ["studyModify", "studyPublic", "sampleModify", "samplePublic", "forceReupload",
-                    "recFullFields", "recUnlinked"];
+                    "recFullFields", "recUnlinked", "expDhAutoSync"];
 // Receipt tables only. A record grid (#recGrid) is an <ena-browser>, whose
 // serialized innerHTML restores as dead DOM — its layout is persisted instead.
 const _RESULT_IDS = ["studyPrepOut", "studyOut", "prepOut", "sampleOut", "readsResults"];
