@@ -26,7 +26,7 @@ from linkml_lib import io as linkml_io
 # rather than left to linkml_lib.io.DEFAULT_BASE_URI: these schemas belong to
 # this repo, and the default would otherwise make what we build depend on which
 # linkml-lib tag happens to be pinned.
-SCHEMA_BASE_URI = "https://github.com/timrozday-mgnify/mimicc-ena-submission-assistant"
+SCHEMA_BASE_URI = "https://github.com/EBI-Metagenomics/mimicc-ena-submission-assistant"
 
 # Fixed DataHarmonizer template folders the two grids are pointed at
 # (server/static/app.js: initDhFrames). Selecting a schema for a role

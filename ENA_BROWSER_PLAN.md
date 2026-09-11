@@ -1,22 +1,17 @@
 # Adopting `ena-browser` across the assistant
 
 Step-by-step plan for an agent. Every record grid in this app moves onto the
-[`ena-browser`](https://github.com/timrozday-mgnify/ena-browser) custom element,
-and the Records tab becomes the equivalent of
-[`ena-browser-ui`](https://github.com/timrozday-mgnify/ena-browser-ui) embedded
-in a tab.
+[`ena-browser`](https://github.com/EBI-Metagenomics/ena-browser) custom element,
+and the Records tab embeds it directly.
 
 **Read first, before touching anything:**
 
 1. `ena-browser/README.md` §3 (the public API), §4 (data sources), §5 (theming).
-2. `ena-browser-ui/server/static/records.js` and `server/views_records.py` — the
-   reference implementation of the Records tab. Most of Phase 3 is porting that
-   file, not writing one.
-3. This repo's `CLAUDE.md` (the Playwright rule) and README "Record grids
+2. This repo's `CLAUDE.md` (the Playwright rule) and README "Record grids
    (ena-browser)".
 
-Clone both repos somewhere scratch and keep them open; this plan quotes them but
-does not reproduce them.
+Clone `ena-browser` somewhere scratch and keep it open; this plan describes the
+integration without reproducing that repository.
 
 ---
 
@@ -33,8 +28,8 @@ does not reproduce them.
 | Confirmation tables today | `renderTable()` / `renderSubmissionResult()` into `#studyOut`, `#sampleOut`, `#readsResults` | `server/static/core.js` |
 | Theme | **light only**, no `data-theme`, no toggle | `server/static/index.html:11` |
 
-Four collisions this app has and `ena-browser-ui` does not. Each has a phase
-below; do not discover them at Phase 3.
+Four integration collisions need handling. Each has a phase below; do not discover
+them at Phase 3.
 
 - **A. Keyboard is globally swallowed.** `core.js:199-200` calls
   `stopImmediatePropagation()` on every `keydown`/`keyup` at `body`. Handsontable
@@ -86,12 +81,11 @@ Add to `Taskfile.yml`:
       - for: ["ena-browser.iife.js", "ena-browser.css"]
         cmd: >
           curl -fsSL -o server/static/vendor/ena-browser/{{.ITEM}}
-          https://github.com/timrozday-mgnify/ena-browser/releases/download/{{.ENA_BROWSER_REF}}/{{.ITEM}}
+          https://github.com/EBI-Metagenomics/ena-browser/releases/download/{{.ENA_BROWSER_REF}}/{{.ITEM}}
 ```
 
-Run it, and **commit the two downloaded files**. This differs from
-`ena-browser-ui`, which gitignores them — deliberately: this app ships in a
-Docker image built by `COPY server/ server/`, and its Playwright suites serve
+Run it, and **commit the two downloaded files**. This app ships in a Docker image
+built by `COPY server/ server/`, and its Playwright suites serve
 `server/static/` directly. Committing keeps the image build network-free and
 keeps the tests from needing a vendor step. Treat them as build artefacts, like
 the DataHarmonizer bundle.
@@ -220,7 +214,7 @@ wiring, unlike the DH iframes.
 ## Phase 2 — Backend: everything the grids need, in one pass
 
 All in `server/views_records.py`, `server/ena_service.py`, `server/views_core.py`.
-Model every signature on `ena-browser-ui/server/views_records.py`.
+Keep the endpoint signatures consistent with the existing Records client and toolkit.
 
 ### 2.1 Bump the toolkit pin
 
@@ -255,8 +249,8 @@ def _list_params(request: HttpRequest) -> dict[str, Any]:
 ```
 
 Mirror the new kwargs on `ena_service.list_records`, which is a pass-through
-wrapper. `full_fields` stays **off** by default here (unlike `ena-browser-ui`),
-because this app's `study_list`/`sample_list` endpoints share `_list_params` and
+wrapper. `full_fields` stays **off** by default because this app's
+`study_list`/`sample_list` endpoints share `_list_params` and
 the pairing panel does not need ~200 Portal columns to pick a sample.
 
 Keep the response shape as it is — a bare JSON list. Changing it would touch
@@ -275,8 +269,8 @@ Add to `views_records.py`, routed in `server/config/urls.py`:
 `MODIFY_ALIAS = "mimicc-assistant-modify"`, so this app's MODIFYs are
 identifiable in ENA.
 
-Follow the file's existing conventions, not `ena-browser-ui`'s: pydantic request
-models + `_parse()`, `webin_creds.from_request`, `JsonResponse`, `ValueError →
+Follow the file's existing conventions: pydantic request models + `_parse()`,
+`webin_creds.from_request`, `JsonResponse`, `ValueError →
 400`. Wrap the toolkit calls so an unexpected exception becomes a `502` with
 `{"detail": "<type>: <msg>"}` — the UI shows that text verbatim and a Django 500
 page would show nothing useful.
@@ -306,9 +300,8 @@ The page reads this once at boot (`refreshHealth()` already stores it in
 
 ### 2.5 A write lock
 
-`ena-browser-ui` refuses writes server-side unless `ENA_BROWSER_READONLY=false`.
-Port the idea, not the default: this app exists to submit, so a global read-only
-default would be wrong. Instead gate only the two MODIFY endpoints on an explicit
+Gate writes server-side. This app exists to submit, so a global read-only default
+would be wrong. Instead gate only the two MODIFY endpoints on an explicit
 UI opt-in — a `write` checkbox on the Records tab (Phase 3) — and keep
 destructive lifecycle actions confirming as they already do. Record the decision
 in a comment; do not add an env var nobody sets.
@@ -329,38 +322,33 @@ in a comment; do not add an env var nobody sets.
 
 ---
 
-## Phase 3 — Records tab becomes the `ena-browser-ui` equivalent
+## Phase 3 — Embed `ena-browser` in the Records tab
 
-This is the biggest phase. It is mostly a port of
-`ena-browser-ui/server/static/records.js` into this app's idioms: `$()`,
-`api()`, `banner(id, ok, msg)`, VF markup, and `appendLog("recLog", …)` instead
-of that app's log panel.
+This is the biggest phase. Implement the Records-tab behavior in this app's idioms:
+`$()`, `api()`, `banner(id, ok, msg)`, VF markup, and `appendLog("recLog", …)`.
 
 ### 3.1 Markup
 
 In the Records section of `index.html`, replace the entity/status/fetch row and
 `<div class="scroll" id="recOut">` with:
 
-- **Fetch criteria row** (mirrors `ena-browser-ui`'s `#criteria`, minus the
-  Portal "all of ENA" source — out of scope, see below):
+- **Fetch criteria row** (excluding the out-of-scope Portal "all of ENA" source):
   `#recEntity` (keep), `#recSearch`, `#recLinked`, `#recUnlinked`,
   `#recFullFields` (keep), `#recStatus` (keep — it is a *request* criterion the
   Reports API answers, distinct from the element's client-side status toggles),
   `#recClear`, and the Fetch button.
 - A `write mode` checkbox `#recWrite`, unchecked by default.
 - `<ena-browser id="recGrid" entity="studies" mode="read" height="600"></ena-browser>`.
-- Three VF panels below the grid, ported from `ena-browser-ui/index.html`:
+- Three VF panels below the grid:
   **MODIFY manifests** (`#recManifestPanel`, `#recGenerate`, `#recManifestState`,
   `#recManifests`, `#recManifestEmpty`), **Submission log** (`#recSubmitLog`),
   and the existing **Debug log** panel (keep `#recLog` exactly as it is — it is
   how a blank linking-accession column gets diagnosed).
-- A `#recSubmit` button and the confirm `<dialog id="recDiffDialog">` from
-  `ena-browser-ui`.
+- A `#recSubmit` button and the confirm `<dialog id="recDiffDialog">`.
 
 **Out of scope, and say so in the README:** the Portal "all of ENA (read-only)"
 source, undo/redo (`getState`/`setState` stack), and the change-history stack.
-They are `ena-browser-ui` features that do not serve a submission workflow, and
-each is independently addable later.
+They do not serve a submission workflow and are independently addable later.
 
 ### 3.2 `server/static/records.js`
 
@@ -370,7 +358,7 @@ which the current fixed list silently drops.
 
 Keep `appendLog`/`clearLog` and `recAction()`'s prompt/confirm behaviour.
 
-Port from `ena-browser-ui/server/static/records.js`, near-verbatim:
+Implement the following in `server/static/records.js`:
 
 - `ATTRIBUTE_PREFIX` / `attributeColumnsIn()` / `attributeColumnSpecs()` — the
   `attr:` columns arrive **visible**, unlike Portal extras.

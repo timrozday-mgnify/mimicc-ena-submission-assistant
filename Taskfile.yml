@@ -19,7 +19,7 @@ tasks:
       - for: ["ena-browser.iife.js", "ena-browser.css"]
         cmd: >
           curl -fsSL -o server/static/vendor/ena-browser/{{.ITEM}}
-          https://github.com/timrozday-mgnify/ena-browser/releases/download/{{.ENA_BROWSER_REF}}/{{.ITEM}}
+          https://github.com/EBI-Metagenomics/ena-browser/releases/download/{{.ENA_BROWSER_REF}}/{{.ITEM}}
 
   test:
     desc: Run the pytest suite (API + read-assignment unit tests, no Docker)

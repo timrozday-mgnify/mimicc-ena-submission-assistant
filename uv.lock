@@ -462,7 +462,7 @@ wheels = [
 [[package]]
 name = "ena-api-client"
 version = "0.1.3"
-source = { git = "https://github.com/timrozday-mgnify/ena-api-client.git?rev=v0.1.3#870180e77197a096d79d5b6745c5757221f31cb9" }
+source = { git = "https://github.com/EBI-Metagenomics/ena-api-client.git?rev=v0.1.3#870180e77197a096d79d5b6745c5757221f31cb9" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
@@ -481,7 +481,7 @@ dependencies = [
 [[package]]
 name = "ena-submission-toolkit"
 version = "0.1.4"
-source = { git = "https://github.com/timrozday-mgnify/ena-submission-toolkit.git?rev=v0.1.4#9d42c4d043e5d0cc7a1ee7f1d2ca73845e71d4a5" }
+source = { git = "https://github.com/EBI-Metagenomics/ena-submission-toolkit.git?rev=v0.1.4#9d42c4d043e5d0cc7a1ee7f1d2ca73845e71d4a5" }
 dependencies = [
     { name = "ena-api-client" },
     { name = "ena-api-handler" },
@@ -969,7 +969,7 @@ wheels = [
 [[package]]
 name = "linkml-lib"
 version = "0.1.0"
-source = { git = "https://github.com/timrozday-mgnify/linkml-lib.git?rev=v0.1.0#49469d80106b9fec1bebc771bbe6f25ff4379f7b" }
+source = { git = "https://github.com/EBI-Metagenomics/linkml-lib.git?rev=v0.1.0#49469d80106b9fec1bebc771bbe6f25ff4379f7b" }
 dependencies = [
     { name = "linkml" },
     { name = "linkml-runtime" },
@@ -1231,12 +1231,12 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=5,<6" },
-    { name = "ena-api-client", git = "https://github.com/timrozday-mgnify/ena-api-client.git?rev=v0.1.3" },
-    { name = "ena-submission-toolkit", git = "https://github.com/timrozday-mgnify/ena-submission-toolkit.git?rev=v0.1.4" },
+    { name = "ena-api-client", git = "https://github.com/EBI-Metagenomics/ena-api-client.git?rev=v0.1.3" },
+    { name = "ena-submission-toolkit", git = "https://github.com/EBI-Metagenomics/ena-submission-toolkit.git?rev=v0.1.4" },
     { name = "gunicorn" },
     { name = "httpx" },
     { name = "linkml" },
-    { name = "linkml-lib", git = "https://github.com/timrozday-mgnify/linkml-lib.git?rev=v0.1.0" },
+    { name = "linkml-lib", git = "https://github.com/EBI-Metagenomics/linkml-lib.git?rev=v0.1.0" },
     { name = "lxml" },
     { name = "pendulum" },
     { name = "pydantic", specifier = ">=2" },

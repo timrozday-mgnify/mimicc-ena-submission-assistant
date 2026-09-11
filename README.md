@@ -18,9 +18,9 @@ It ties together three existing tools:
 
 | Concern | Reused from | How |
 |---|---|---|
-| Create/modify/list/delete **studies & samples** | [`ena-api-client`](../ena-api-client) + [`ena-submission-toolkit`](https://github.com/timrozday-mgnify/ena-submission-toolkit) | `WebinClient` REST submission (server-side) + the `submit_study`/`submit_sample` batch builders |
+| Create/modify/list/delete **studies & samples** | [`ena-api-client`](../ena-api-client) + [`ena-submission-toolkit`](https://github.com/EBI-Metagenomics/ena-submission-toolkit) | `WebinClient` REST submission (server-side) + the `submit_study`/`submit_sample` batch builders |
 | Enter **sample metadata** | [DataHarmonizer](../DataHarmonizer) | embedded spreadsheet UI (Samples tab) → export → filter/rename → submit |
-| Submit **reads** | [`read-helper-app`](../read-helper-app) | a local **[read-helper-app](https://github.com/timrozday-mgnify/read-helper-app)** Electron app runs Webin-CLI via Java on the user's machine; the browser bridges manifest (server) → helper → result (server) |
+| Submit **reads** | [`read-helper-app`](../read-helper-app) | a local **[read-helper-app](https://github.com/EBI-Metagenomics/read-helper-app)** Electron app runs Webin-CLI via Java on the user's machine; the browser bridges manifest (server) → helper → result (server) |
 
 New glue added here:
 
@@ -40,7 +40,7 @@ New glue added here:
   against the test environment) plus, on production, the ENA Portal's ~200
   indexed fields. It costs an extra request per 100 records, so it is off by
   default. Rendered by the reusable
-  [`ena-browser`](https://github.com/timrozday-mgnify/ena-browser) grid element,
+  [`ena-browser`](https://github.com/EBI-Metagenomics/ena-browser) grid element,
   which also carries editing: in write mode a cell edit becomes an ENA **MODIFY**,
   gated behind a manifest preview of the exact XML — see "Record grids
   (ena-browser)" below.
@@ -60,7 +60,7 @@ Browser ── login cookie ──► Django server (server/config/, views_*.py)
    │  fetch manifest + plan ◄─┘
    │  POST manifest + Webin creds
    ▼
-Local read-helper-app (127.0.0.1:9100, https://github.com/timrozday-mgnify/read-helper-app) ── java -jar webin-cli.jar ──► ENA dropbox
+Local read-helper-app (127.0.0.1:9100, https://github.com/EBI-Metagenomics/read-helper-app) ── java -jar webin-cli.jar ──► ENA dropbox
    │  SSE log stream ─► Browser ─► POST /api/reads/result (server updates the resume ledger)
 ```
 
@@ -76,7 +76,7 @@ Local read-helper-app (127.0.0.1:9100, https://github.com/timrozday-mgnify/read-
   local mode — there's no login screen to attack in single-user mode).
 - **Reads**: the server builds the webin-cli manifest and the upload *plan*
   (what to upload vs. skip, via the ledger + ENA Reports API), but the upload
-  itself runs on the user's machine in the [read-helper-app](https://github.com/timrozday-mgnify/read-helper-app)
+  itself runs on the user's machine in the [read-helper-app](https://github.com/EBI-Metagenomics/read-helper-app)
   (built from a pinned tag, see "Pinned dependency versions" below) — reads
   never pass through the server.
 
@@ -128,7 +128,7 @@ Put the app behind a TLS-terminating reverse proxy (the login cookie is marked
 `admin`, then create user accounts from the **Admin** tab. Each user has their
 own private sessions and submissions.
 
-Each user installs and runs the [read-helper-app](https://github.com/timrozday-mgnify/read-helper-app)
+Each user installs and runs the [read-helper-app](https://github.com/EBI-Metagenomics/read-helper-app)
 on their **own workstation** (it is what uploads their reads directly to ENA).
 See its README; point its `MIMICC_APP_ORIGIN` at your hosted app so the
 browser page is allowed to drive the loopback helper.
@@ -154,7 +154,7 @@ build directly on the host (requires Node + Yarn there instead — see the
 script's usage comment for the env vars it expects) against this repo's
 committed `schemas/`. Both this script and the Dockerfile's `dh-builder` stage pull the
 actual build steps (`dh_build_steps.sh`) from the standalone
-[`dh-builder`](https://github.com/timrozday-mgnify/dh-builder) repo — its
+[`dh-builder`](https://github.com/EBI-Metagenomics/dh-builder) repo — its
 single canonical copy, not vendored here — pinned to a tag (`DH_BUILDER_REF` in
 the `Dockerfile`), so they can't drift apart.
 
@@ -316,7 +316,7 @@ matching row, appends a new one otherwise).
 ### Record grids (ena-browser)
 
 Record tables — anything showing rows that came from ENA's **Webin Reports API** —
-are rendered by [`ena-browser`](https://github.com/timrozday-mgnify/ena-browser),
+are rendered by [`ena-browser`](https://github.com/EBI-Metagenomics/ena-browser),
 a standalone, framework-free `<ena-browser>` custom element built on Handsontable.
 It is vendored as a prebuilt bundle (`server/static/vendor/ena-browser/`) at a pinned
 release tag and loaded with plain `<script>`/`<link>` tags — it introduces no npm
@@ -365,10 +365,9 @@ debug log, the release/hold/suppress/cancel handlers (the element only *emits*
 filters, and the pairing logic that joins a selected sample to a read group.
 Manifest/XML building for modifications stays in `ena-submission-toolkit`.
 
-**Deliberately not ported** from [`ena-browser-ui`](https://github.com/timrozday-mgnify/ena-browser-ui),
-the standalone app this grew from: the Portal "all of ENA (read-only)" source,
-undo/redo, and the change-history stack. They serve a browsing app rather than a
-submission workflow, and each is independently addable later.
+**Out of scope:** the Portal "all of ENA (read-only)" source, undo/redo, and a
+change-history stack. They do not serve the submission workflow and can be added
+independently later.
 
 **Session state.** Sessions persist each grid's layout (column order, pins, hidden
 columns, widths) and filters, and never its rows: a saved row shows the status it had
@@ -564,13 +563,13 @@ docker-compose.yml
 ```
 
 The Dockerfile for the `dh-builder` image (shared with
-[dataharmonizer-template-builder](https://github.com/timrozday-mgnify/dataharmonizer-template-builder),
+[dataharmonizer-template-builder](https://github.com/EBI-Metagenomics/dataharmonizer-template-builder),
 which runs the same image with a different `TEMPLATE`), and `dh_build_steps.sh`
 (the shared DH build steps, pulled in by the Dockerfile's embedded
 `dh-builder` stage and `scripts/build_dh_template.sh` above) live in the
-standalone [`dh-builder`](https://github.com/timrozday-mgnify/dh-builder) repo,
+standalone [`dh-builder`](https://github.com/EBI-Metagenomics/dh-builder) repo,
 pulled at a pinned tag — used only at image-build time now (there's no
-runtime/on-demand rebuild path), the same way [`read-helper-app`](https://github.com/timrozday-mgnify/read-helper-app)
+runtime/on-demand rebuild path), the same way [`read-helper-app`](https://github.com/EBI-Metagenomics/read-helper-app)
 is pulled for reads upload.
 
 ### Pinned dependency versions
@@ -581,7 +580,7 @@ All sibling-repo code is pulled at a fixed git tag, never a local checkout or
 - **`pyproject.toml`** — `ena-api-client` (v0.1.3), `linkml-lib` (v0.1.0), and
   `ena-submission-toolkit` (v0.1.4 — the tag that adds `attr:` checklist columns
   and attribute editing) as
-  `name @ git+https://github.com/timrozday-mgnify/<repo>.git@<tag>` entries
+  `name @ git+https://github.com/EBI-Metagenomics/<repo>.git@<tag>` entries
   in `[project.dependencies]`.
 - **`Taskfile.yml`** — `ENA_BROWSER_REF` (v0.1.2), the `ena-browser` release whose
   `ena-browser.iife.js` + `ena-browser.css` are vendored into
@@ -597,7 +596,7 @@ pinned at all — they're committed directly in this repo, so they version
 along with everything else.
 
 To bump a pin: cut a new tag in the sibling repo, then update every reference
-to that repo's tag across these two files (`grep -rn timrozday-mgnify .` from
+to that repo's tag across these two files (`grep -rn EBI-Metagenomics .` from
 the repo root finds them all).
 
 ## Notes

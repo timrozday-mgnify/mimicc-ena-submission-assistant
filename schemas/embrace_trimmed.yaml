@@ -1,4 +1,4 @@
-id: https://github.com/timrozday-mgnify/mimicc-ena-submission-assistant/EMBRACE
+id: https://github.com/EBI-Metagenomics/mimicc-ena-submission-assistant/EMBRACE
 name: EMBRACE
 title: EMBRACE
 description: Genomic Standards Consortium package extension for reporting of measurements and observations obtained from the
@@ -15,7 +15,7 @@ classes:
   dh_interface:
     name: dh_interface
     description: A DataHarmonizer interface
-    from_schema: https://github.com/timrozday-mgnify/mimicc-ena-submission-assistant/EMBRACE
+    from_schema: https://github.com/EBI-Metagenomics/mimicc-ena-submission-assistant/EMBRACE
   EMBRACE:
     name: EMBRACE
     title: EMBRACE

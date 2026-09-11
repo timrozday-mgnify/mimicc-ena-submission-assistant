@@ -1,4 +1,4 @@
-id: https://github.com/timrozday-mgnify/mimicc-ena-submission-assistant/MIMICC_Sample
+id: https://github.com/EBI-Metagenomics/mimicc-ena-submission-assistant/MIMICC_Sample
 name: MIMICC_Sample
 title: MIMICC Sample Submission
 description: >-
@@ -21,7 +21,7 @@ classes:
     annotations:
       id: dh_interface
     description: A DataHarmonizer interface
-    from_schema: https://github.com/timrozday-mgnify/mimicc-ena-submission-assistant/MIMICC_Sample
+    from_schema: https://github.com/EBI-Metagenomics/mimicc-ena-submission-assistant/MIMICC_Sample
   MIMICC_Sample:
     annotations:
       id: MIMICC_Sample

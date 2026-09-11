@@ -9,17 +9,17 @@ ARG DH_BUILDER_REF=v0.1.0
 FROM alpine/git:latest AS dataharmonizer-src
 ARG DATAHARMONIZER_REF
 RUN git clone --branch "${DATAHARMONIZER_REF}" --depth 1 \
-      https://github.com/timrozday-mgnify/DataHarmonizer.git /src
+      https://github.com/EBI-Metagenomics/DataHarmonizer.git /src
 
 FROM alpine/git:latest AS dh-builder-src
 ARG DH_BUILDER_REF
 RUN git clone --branch "${DH_BUILDER_REF}" --depth 1 \
-      https://github.com/timrozday-mgnify/dh-builder.git /src
+      https://github.com/EBI-Metagenomics/dh-builder.git /src
 
 # Builds the embedded DataHarmonizer (DH) bundle from the pinned DataHarmonizer
 # checkout above. Mirrors scripts/build_dh_template.sh. dh_build_steps.sh comes
 # from the pinned dh-builder checkout — see
-# https://github.com/timrozday-mgnify/dh-builder.
+# https://github.com/EBI-Metagenomics/dh-builder.
 FROM node:20-slim AS dh-builder
 RUN apt-get update && apt-get install -y python3 python3-pip && rm -rf /var/lib/apt/lists/*
 

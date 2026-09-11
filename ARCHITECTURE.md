@@ -1,7 +1,7 @@
 # Architecture Standard: Server-Side Web Apps
 
 This is a **standard**, not a retrospective: it states what sibling projects
-in this ecosystem (the `timrozday-mgnify` group of repos) must do, with the
+in this ecosystem (the `EBI-Metagenomics` group of repos) must do, with the
 reasoning preserved so it doesn't need to be re-derived or re-litigated per
 project.
 
@@ -17,10 +17,10 @@ shape, rather than re-deciding them from scratch each time.
 HTTP API to a browser UI — i.e. mimicc-ena-submission-assistant's shape.
 
 **Does not apply to (or applies only partially):**
-- [read-helper-app](https://github.com/timrozday-mgnify/read-helper-app) — a
+- [read-helper-app](https://github.com/EBI-Metagenomics/read-helper-app) — a
   stateless local helper that runs on a user's own machine; no database, no
   multi-user concerns.
-- [dataharmonizer-template-builder](https://github.com/timrozday-mgnify/dataharmonizer-template-builder)
+- [dataharmonizer-template-builder](https://github.com/EBI-Metagenomics/dataharmonizer-template-builder)
   — a frontend-heavy sidecar without this standard's full shape (no
   multi-user database-backed state), so it isn't required to adopt this
   standard wholesale. Adopting individual pieces (deployment, testing
@@ -365,7 +365,7 @@ to a reverse proxy or `whitenoise` instead of routing them through Django —
 pin it to a fixed git tag, never `main`/`master` and never a local
 checkout. Two forms, same rule:
 
-- **Python dependencies** — `name @ git+https://github.com/timrozday-mgnify/<repo>.git@<tag>`
+- **Python dependencies** — `name @ git+https://github.com/EBI-Metagenomics/<repo>.git@<tag>`
   entries in `pyproject.toml`'s `[project.dependencies]`.
 - **Docker build contexts** — a pinned tag in the git URL
   (`...git#<tag>`, or `...git#<tag>:<subdir>` for a subdirectory), via a

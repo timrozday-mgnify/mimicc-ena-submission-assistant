@@ -346,8 +346,7 @@ def records_modify_preview(request: HttpRequest) -> JsonResponse:
 
 
 def records_modify(request: HttpRequest) -> JsonResponse:
-    # No server-side read-only switch (ena-browser-ui has one): this app exists
-    # to submit. Write mode is an explicit per-session opt-in in the UI instead,
+    # This app exists to submit. Write mode is an explicit per-session opt-in in the UI,
     # and lifecycle actions keep confirming as they already do.
     return _modify(request, submit=True)
 
