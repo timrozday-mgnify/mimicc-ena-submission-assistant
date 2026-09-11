@@ -1,4 +1,4 @@
-id: https://github.com/timrozday-mgnify/mimicc-ena-submission-assistant/MIMICC
+id: https://github.com/EBI-Metagenomics/mimicc-ena-submission-assistant/MIMICC
 name: MIMICC
 title: MIMICC
 description: Genomic Standards Consortium package extension for reporting of measurements and observations obtained from the
@@ -15,7 +15,7 @@ classes:
   dh_interface:
     name: dh_interface
     description: A DataHarmonizer interface
-    from_schema: https://github.com/timrozday-mgnify/mimicc-ena-submission-assistant/MIMICC
+    from_schema: https://github.com/EBI-Metagenomics/mimicc-ena-submission-assistant/MIMICC
   MIMICC:
     name: MIMICC
     title: MIMICC

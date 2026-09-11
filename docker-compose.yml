@@ -46,11 +46,11 @@ services:
     platform: ${MIMICC_PLATFORM:-linux/arm64}
     build:
       # Pinned tags — see README "Pinned dependency versions" for how to bump these.
-      context: https://github.com/timrozday-mgnify/dataharmonizer-template-builder.git#v0.1.0
+      context: https://github.com/EBI-Metagenomics/dataharmonizer-template-builder.git#v0.1.0
       additional_contexts:
-        dataharmonizer-src: https://github.com/timrozday-mgnify/DataHarmonizer.git#v2.1.1-mimicc
-        linkml-lib: https://github.com/timrozday-mgnify/linkml-lib.git#v0.1.0
-        dh-builder-lib: https://github.com/timrozday-mgnify/dh-builder.git#v0.1.0
+        dataharmonizer-src: https://github.com/EBI-Metagenomics/DataHarmonizer.git#v2.1.1-mimicc
+        linkml-lib: https://github.com/EBI-Metagenomics/linkml-lib.git#v0.1.0
+        dh-builder-lib: https://github.com/EBI-Metagenomics/dh-builder.git#v0.1.0
     container_name: mimicc-dhtb
     ports:
       - "127.0.0.1:${MIMICC_DHTB_PORT:-8765}:8765"

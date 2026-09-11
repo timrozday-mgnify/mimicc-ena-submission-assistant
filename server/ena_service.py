@@ -9,8 +9,8 @@ Wraps the existing reusable functions so the views stay thin:
 
 **No ENA request is made in this repo.** Everything that talks to ENA lives in
 ``ena-submission-toolkit`` (``records.py``: listing, MODIFY, lifecycle actions,
-credentials) over ``ena-api-client`` (transport), so ``ena-browser-ui`` and any
-other caller get the same behaviour. What is MIMICC-specific — the sample
+credentials) over ``ena-api-client`` (transport), so every caller gets the same
+behaviour. What is MIMICC-specific — the sample
 column filter, the DataHarmonizer plumbing, the schema-driven unit rules — is
 what remains here.
 

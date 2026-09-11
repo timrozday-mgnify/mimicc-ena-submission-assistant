@@ -1,4 +1,4 @@
-id: https://github.com/timrozday-mgnify/mimicc-ena-submission-assistant/SRA_study
+id: https://github.com/EBI-Metagenomics/mimicc-ena-submission-assistant/SRA_study
 name: SRA_study
 title: Study
 description: A Study is a container for a sequencing investigation that may comprise multiple experiments. The Study has an
@@ -15,7 +15,7 @@ classes:
   dh_interface:
     name: dh_interface
     description: A DataHarmonizer interface
-    from_schema: https://github.com/timrozday-mgnify/mimicc-ena-submission-assistant/SRA_study
+    from_schema: https://github.com/EBI-Metagenomics/mimicc-ena-submission-assistant/SRA_study
   SRA_study:
     name: SRA_study
     title: Study

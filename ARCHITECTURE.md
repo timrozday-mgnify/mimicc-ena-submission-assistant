@@ -1,7 +1,7 @@
 # Architecture Standard: Server-Side Web Apps
 
 This is a **standard**, not a retrospective: it states what sibling projects
-in this ecosystem (the `timrozday-mgnify` group of repos) must do, with the
+in this ecosystem (the `EBI-Metagenomics` group of repos) must do, with the
 reasoning preserved so it doesn't need to be re-derived or re-litigated per
 project.
 
@@ -17,10 +17,10 @@ shape, rather than re-deciding them from scratch each time.
 HTTP API to a browser UI — i.e. mimicc-ena-submission-assistant's shape.
 
 **Does not apply to (or applies only partially):**
-- [read-helper-app](https://github.com/timrozday-mgnify/read-helper-app) — a
+- [read-helper-app](https://github.com/EBI-Metagenomics/read-helper-app) — a
   stateless local helper that runs on a user's own machine; no database, no
   multi-user concerns.
-- [dataharmonizer-template-builder](https://github.com/timrozday-mgnify/dataharmonizer-template-builder)
+- [dataharmonizer-template-builder](https://github.com/EBI-Metagenomics/dataharmonizer-template-builder)
   — a frontend-heavy sidecar without this standard's full shape (no
   multi-user database-backed state), so it isn't required to adopt this
   standard wholesale. Adopting individual pieces (deployment, testing
@@ -56,7 +56,7 @@ an existing project if one is later brought into scope.
 | Per-user secrets (API keys, third-party creds) | Cache backend (Redis in production, in-process for local/dev), never the database | [§3.5](#35-per-user-secrets-in-cache-never-db) |
 | Deployment | gunicorn (WSGI), behind a reverse proxy in hosted deployments | [§3.6](#36-gunicornwsgi-deployment) |
 | Static files | Django's own static-serving views in dev; reverse proxy / whitenoise in production | [§3.7](#37-static-file-serving-pattern) |
-| Sibling-repo dependencies | Pinned to a git tag (`name @ git+https://...@<tag>`), never `main`/`master` or a local checkout | [§3.8](#38-sibling-repo-pinning-strategy) |
+| Sibling-repo dependencies | Pinned to a git tag or full commit SHA (`name @ git+https://...@<ref>`), never `main`/`master` or a local checkout | [§3.8](#38-sibling-repo-pinning-strategy) |
 | Testing | `pytest` + Django's `django.test.Client`, in-process (no live server, no Docker) for API tests | [§3.9](#39-django-test-client-for-tests) |
 
 This table is the quick-reference; §3 has the reasoning and the rejected
@@ -362,10 +362,10 @@ to a reverse proxy or `whitenoise` instead of routing them through Django —
 
 **Standard:** when a project depends on another repo in this ecosystem
 (a shared library, or a sibling service built/cloned at image-build time),
-pin it to a fixed git tag, never `main`/`master` and never a local
+pin it to a fixed git tag or full commit SHA, never `main`/`master` and never a local
 checkout. Two forms, same rule:
 
-- **Python dependencies** — `name @ git+https://github.com/timrozday-mgnify/<repo>.git@<tag>`
+- **Python dependencies** — `name @ git+https://github.com/EBI-Metagenomics/<repo>.git@<ref>`
   entries in `pyproject.toml`'s `[project.dependencies]`.
 - **Docker build contexts** — a pinned tag in the git URL
   (`...git#<tag>`, or `...git#<tag>:<subdir>` for a subdirectory), via a

@@ -1,4 +1,4 @@
-id: https://github.com/timrozday-mgnify/mimicc-ena-submission-assistant/SRA_run
+id: https://github.com/EBI-Metagenomics/mimicc-ena-submission-assistant/SRA_run
 name: SRA_run
 title: Run
 description: A run contains a group of reads generated for a particular experiment.
@@ -13,7 +13,7 @@ classes:
   dh_interface:
     name: dh_interface
     description: A DataHarmonizer interface
-    from_schema: https://github.com/timrozday-mgnify/mimicc-ena-submission-assistant/SRA_run
+    from_schema: https://github.com/EBI-Metagenomics/mimicc-ena-submission-assistant/SRA_run
   SRA_run:
     name: SRA_run
     title: Run

@@ -1,4 +1,4 @@
-id: https://github.com/timrozday-mgnify/mimicc-ena-submission-assistant/ena_sample_core
+id: https://github.com/EBI-Metagenomics/mimicc-ena-submission-assistant/ena_sample_core
 name: ena_sample_core
 title: ENA Sample Core Fields
 description: Universal required fields for all ENA sample submissions. These fields
@@ -16,7 +16,7 @@ classes:
   dh_interface:
     name: dh_interface
     description: A DataHarmonizer interface
-    from_schema: https://github.com/timrozday-mgnify/mimicc-ena-submission-assistant/ena_sample_core
+    from_schema: https://github.com/EBI-Metagenomics/mimicc-ena-submission-assistant/ena_sample_core
   ena_sample_core:
     name: ena_sample_core
     title: ENA Sample Core Fields

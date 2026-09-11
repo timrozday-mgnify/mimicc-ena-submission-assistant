@@ -1,6 +1,6 @@
 # The MIMICC ENA Submission Ecosystem
 
-This document describes the group of related `timrozday-mgnify` projects that
+This document describes the group of related `EBI-Metagenomics` projects that
 together let the MIMICC project submit studies, samples and sequencing reads to the
 **European Nucleotide Archive (ENA)**. It explains what each project is for, where
 each kind of functionality belongs, which language/tool implements what (and why),
@@ -111,7 +111,7 @@ modes: *local* (single-user auto-login, Postgres + companions via Docker Compose
 - **Backend** (`server/`): `views_*.py` split by domain (auth, credentials, sessions,
   records, schemas, core); `orm/models.py` (`User`, `SubmissionSession`, `ReadsRun`);
   `ena_service.py` is MIMICC glue over `ena-submission-toolkit` (its `records.py` owns
-  listing, MODIFY and lifecycle actions, shared with `ena-browser-ui`) — no ENA request is
+  listing, MODIFY and lifecycle actions) — no ENA request is
   made in this repo; `schema_service.py`
   wraps `linkml-lib`; `read_assign.py` groups reads and builds webin-cli manifests;
   `credentials_store.py` keeps per-user Webin credentials in the cache only (never the
@@ -235,7 +235,7 @@ suppress/cancel, executed by the host), `filter-change` and `layout-change`. Sta
 of "cancelled"/"suppressed" include/exclude toggles are built in, because every
 consumer wants them.
 
-Repo: `timrozday-mgnify/ena-browser` — design docs (`README.md`, `IMPLEMENTATION_PLAN.md`)
+Repo: `EBI-Metagenomics/ena-browser` — design docs (`README.md`, `IMPLEMENTATION_PLAN.md`)
 land first, implementation follows. The assistant's adoption plan lives in this repo's
 `ENA_BROWSER_PLAN.md`.
 
