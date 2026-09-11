@@ -55,8 +55,9 @@ RUN apt-get update && apt-get install -y docker.io curl && rm -rf /var/lib/apt/l
 
 WORKDIR /app
 
-# ena_api, linkml_lib, dh_builder_lib and ena_submission_toolkit are pinned
-# pip dependencies (see pyproject.toml) — no local build context or
+# ena_api (via ena_submission_toolkit), linkml_lib, dh_builder_lib and
+# ena_submission_toolkit are pinned pip dependencies (see pyproject.toml).
+# They need no local build context or
 # vendor.sh copy needed for them anymore.
 COPY pyproject.toml .
 RUN pip install --no-cache-dir .

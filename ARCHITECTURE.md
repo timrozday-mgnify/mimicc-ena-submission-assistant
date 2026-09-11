@@ -56,7 +56,7 @@ an existing project if one is later brought into scope.
 | Per-user secrets (API keys, third-party creds) | Cache backend (Redis in production, in-process for local/dev), never the database | [§3.5](#35-per-user-secrets-in-cache-never-db) |
 | Deployment | gunicorn (WSGI), behind a reverse proxy in hosted deployments | [§3.6](#36-gunicornwsgi-deployment) |
 | Static files | Django's own static-serving views in dev; reverse proxy / whitenoise in production | [§3.7](#37-static-file-serving-pattern) |
-| Sibling-repo dependencies | Pinned to a git tag (`name @ git+https://...@<tag>`), never `main`/`master` or a local checkout | [§3.8](#38-sibling-repo-pinning-strategy) |
+| Sibling-repo dependencies | Pinned to a git tag or full commit SHA (`name @ git+https://...@<ref>`), never `main`/`master` or a local checkout | [§3.8](#38-sibling-repo-pinning-strategy) |
 | Testing | `pytest` + Django's `django.test.Client`, in-process (no live server, no Docker) for API tests | [§3.9](#39-django-test-client-for-tests) |
 
 This table is the quick-reference; §3 has the reasoning and the rejected
@@ -362,10 +362,10 @@ to a reverse proxy or `whitenoise` instead of routing them through Django —
 
 **Standard:** when a project depends on another repo in this ecosystem
 (a shared library, or a sibling service built/cloned at image-build time),
-pin it to a fixed git tag, never `main`/`master` and never a local
+pin it to a fixed git tag or full commit SHA, never `main`/`master` and never a local
 checkout. Two forms, same rule:
 
-- **Python dependencies** — `name @ git+https://github.com/EBI-Metagenomics/<repo>.git@<tag>`
+- **Python dependencies** — `name @ git+https://github.com/EBI-Metagenomics/<repo>.git@<ref>`
   entries in `pyproject.toml`'s `[project.dependencies]`.
 - **Docker build contexts** — a pinned tag in the git URL
   (`...git#<tag>`, or `...git#<tag>:<subdir>` for a subdirectory), via a

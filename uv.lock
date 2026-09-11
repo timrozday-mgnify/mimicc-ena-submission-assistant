@@ -481,7 +481,7 @@ dependencies = [
 [[package]]
 name = "ena-submission-toolkit"
 version = "0.1.4"
-source = { git = "https://github.com/EBI-Metagenomics/ena-submission-toolkit.git?rev=v0.1.4#9d42c4d043e5d0cc7a1ee7f1d2ca73845e71d4a5" }
+source = { git = "https://github.com/EBI-Metagenomics/ena-submission-toolkit.git?rev=f23f30d69d109b8223e44ae3c7f8fd99c83df474#f23f30d69d109b8223e44ae3c7f8fd99c83df474" }
 dependencies = [
     { name = "ena-api-client" },
     { name = "ena-api-handler" },
@@ -1203,7 +1203,6 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "django" },
-    { name = "ena-api-client" },
     { name = "ena-submission-toolkit" },
     { name = "gunicorn" },
     { name = "httpx" },
@@ -1231,8 +1230,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=5,<6" },
-    { name = "ena-api-client", git = "https://github.com/EBI-Metagenomics/ena-api-client.git?rev=v0.1.3" },
-    { name = "ena-submission-toolkit", git = "https://github.com/EBI-Metagenomics/ena-submission-toolkit.git?rev=v0.1.4" },
+    { name = "ena-submission-toolkit", git = "https://github.com/EBI-Metagenomics/ena-submission-toolkit.git?rev=f23f30d69d109b8223e44ae3c7f8fd99c83df474" },
     { name = "gunicorn" },
     { name = "httpx" },
     { name = "linkml" },

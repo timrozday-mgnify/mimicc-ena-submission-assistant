@@ -574,13 +574,13 @@ is pulled for reads upload.
 
 ### Pinned dependency versions
 
-All sibling-repo code is pulled at a fixed git tag, never a local checkout or
+All sibling-repo code is pulled at a fixed git tag or full commit SHA, never a local checkout or
 `main`/`master`. The pins live in two places:
 
-- **`pyproject.toml`** — `ena-api-client` (v0.1.3), `linkml-lib` (v0.1.0), and
-  `ena-submission-toolkit` (v0.1.4 — the tag that adds `attr:` checklist columns
+- **`pyproject.toml`** — `linkml-lib` (v0.1.0) and `ena-submission-toolkit`
+  (the URL-migration commit on top of v0.1.4, which adds `attr:` checklist columns
   and attribute editing) as
-  `name @ git+https://github.com/EBI-Metagenomics/<repo>.git@<tag>` entries
+  `name @ git+https://github.com/EBI-Metagenomics/<repo>.git@<ref>` entries
   in `[project.dependencies]`.
 - **`Taskfile.yml`** — `ENA_BROWSER_REF` (v0.1.2), the `ena-browser` release whose
   `ena-browser.iife.js` + `ena-browser.css` are vendored into
